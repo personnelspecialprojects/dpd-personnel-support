@@ -38,6 +38,7 @@
 <main id="mainApp" hidden>
   <nav class="tabs" role="tablist">
     <button type="button" class="tab active" role="tab" aria-selected="true" data-view="logView">Log activity</button>
+    <button type="button" class="tab" role="tab" aria-selected="false" data-view="workView">Tracked work <span id="myWorkBadge" class="tab-badge" hidden></span></button>
     <button type="button" class="tab" role="tab" aria-selected="false" data-view="ticketsView">Inquiries <span id="openInquiryBadge" class="tab-badge" hidden></span></button>
     <button type="button" class="tab" role="tab" aria-selected="false" data-view="reportsView">Reports</button>
     <button type="button" class="tab" role="tab" aria-selected="false" data-view="auditView">Audit log</button>
@@ -60,6 +61,27 @@
         <div id="myRecent"></div>
       </aside>
     </div>
+  </div>
+
+  <!-- TRACKED WORK -->
+  <div class="view" id="workView">
+    <div class="toolbar">
+      <div class="segmented" id="workFilters" role="group" aria-label="Show">
+        <button type="button" data-filter="mine" class="active" aria-pressed="true">Mine <span class="seg-count"></span></button>
+        <button type="button" data-filter="open" aria-pressed="false">All open <span class="seg-count"></span></button>
+        <button type="button" data-filter="waiting" aria-pressed="false">Waiting on other offices <span class="seg-count"></span></button>
+        <button type="button" data-filter="closed" aria-pressed="false">Recently closed <span class="seg-count"></span></button>
+      </div>
+      <span id="workTypeChip" class="filter-chip" hidden></span>
+      <input type="text" id="workSearch" placeholder="Search name, number, owner" aria-label="Search tracked work">
+    </div>
+    <div class="table-scroll" id="workTableWrap">
+      <table class="data">
+        <thead><tr><th>Item</th><th>Owner</th><th>Progress</th><th>Next step</th><th>Open for</th><th>Updated</th></tr></thead>
+        <tbody id="workBody"></tbody>
+      </table>
+    </div>
+    <div id="workEmpty" class="empty-block" hidden></div>
   </div>
 
   <!-- INQUIRIES -->
@@ -350,7 +372,7 @@
         <select id="atInputType">
           <option value="Employee Number">An employee number</option>
           <option value="Reference">A reference (letters allowed)</option>
-          <option value="Click Only">Nothing, just click Log</option>
+          <option value="Click Only">Nothing, just click the button</option>
         </select>
       </div>
       <div class="field-row" id="atInputLabelRow">
@@ -375,6 +397,19 @@
         <label for="atDescription">Helper text</label>
         <input type="text" id="atDescription" placeholder="Optional, one short line shown under the name">
       </div>
+      <div class="field-row">
+        <label>Checklist</label>
+        <div>
+          <div class="hint" style="margin-top:7px;">Optional. Leave empty for one-step logging. Add steps for work that runs over days or weeks: the board button becomes <strong>Start</strong>, and each item gets its own copy of these steps, which can be edited on that item.</div>
+          <ol class="tpl-steps" id="atSteps"></ol>
+          <div class="add-step">
+            <input type="text" id="atNewStep" placeholder="Add a step, e.g. Submit posting request to Civil Service">
+            <label class="check small"><input type="checkbox" id="atNewStepExt"> Other office</label>
+            <button type="button" class="btn btn-ghost btn-sm" id="atAddStepBtn">Add step</button>
+          </div>
+          <div class="hint" id="atStepsHint" hidden>Changes apply to items started from now on. Items already in progress keep their own checklist.</div>
+        </div>
+      </div>
     </div>
     <div class="modal-footer">
       <div class="save-msg" id="typeSaveMsg"></div>
@@ -384,11 +419,27 @@
   </div>
 </div>
 
+<!-- ======= Work item modal ======= -->
+<div class="modal-overlay" id="workOverlay">
+  <div class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="workModalTitle">
+    <div class="modal-header">
+      <div>
+        <h2 id="workModalTitle">Work item</h2>
+        <div class="muted small" id="workModalSub"></div>
+      </div>
+      <button type="button" id="workModalClose" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body" id="workModalBody"></div>
+    <div class="modal-footer" id="workModalFooter"></div>
+  </div>
+</div>
+
 <div id="toastHost" aria-live="polite"></div>
 
 <script src="config.js"></script>
 <script src="core.js"></script>
 <script src="activity.js"></script>
+<script src="work.js"></script>
 <script src="tickets.js"></script>
 <script src="reports.js"></script>
 <script src="admin.js"></script>
