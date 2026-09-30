@@ -61,6 +61,27 @@ const Activity = (() => {
     return inputMode(t) === "employee" ? "Employee #" : "Reference";
   }
 
+  /* Checklist template on an activity type. Stored as JSON [{text, external}], but a
+     plain list (one step per line, "[other]" prefix for other-office steps) also works,
+     so the column can be edited directly in SharePoint if needed. */
+  function templateSteps(t){
+    const raw = t && t[T.checklistSteps];
+    if(!raw || !String(raw).trim()) return [];
+    try{
+      const arr = JSON.parse(raw);
+      if(Array.isArray(arr)){
+        return arr.map(x => ({ text: String((x && x.text) || "").trim(), external: !!(x && x.external) }))
+          .filter(x => x.text);
+      }
+    }catch(_){ /* not JSON — fall through to line format */ }
+    return String(raw).split(/\r?\n/).map(l => l.trim()).filter(Boolean).map(l => {
+      const ext = /^\[(other|external)\]/i.test(l);
+      return { text: l.replace(/^\[(other|external)\]\s*/i, ""), external: ext };
+    });
+  }
+
+  function hasChecklist(t){ return templateSteps(t).length > 0; }
+
   function windowDays(t){
     const v = t[T.duplicateWindowDays];
     if(v === null || v === undefined || v === "") return CONFIG.defaultDuplicateWindowDays;
@@ -96,7 +117,7 @@ const Activity = (() => {
   function buildBoard(){
     const types = allTypes.filter(isActive);
     const sig = JSON.stringify(sortedTypes(types).map(t =>
-      [t.Id, t.Title, t[T.category], t[T.inputType], t[T.inputLabel], t[T.description], t[T.sortOrder]]));
+      [t.Id, t.Title, t[T.category], t[T.inputType], t[T.inputLabel], t[T.description], t[T.sortOrder], hasChecklist(t)]));
     if(sig === boardSignature) return;
     boardSignature = sig;
 
@@ -159,7 +180,15 @@ const Activity = (() => {
   function rowHtml(t){
     const mode = inputMode(t);
     const label = inputLabel(t);
-    const control = mode === "click"
+    const checklist = hasChecklist(t);
+    const control = checklist
+      ? (mode === "click"
+          ? `<button type="button" class="btn btn-navy task-log task-log-wide" data-type-id="${t.Id}">Start one</button>`
+          : `<input class="task-input" data-type-id="${t.Id}" type="text" autocomplete="off" spellcheck="false"
+                ${mode === "employee" ? 'inputmode="numeric"' : ""}
+                placeholder="${escapeHtml(label)}" aria-label="${escapeHtml(`${t.Title}: ${label}`)}">
+             <button type="button" class="btn btn-navy task-log" data-type-id="${t.Id}">Start</button>`)
+      : mode === "click"
       ? `<button type="button" class="btn btn-navy task-log task-log-wide" data-type-id="${t.Id}">Log one</button>`
       : `<input class="task-input" data-type-id="${t.Id}" type="text" autocomplete="off" spellcheck="false"
             ${mode === "employee" ? 'inputmode="numeric"' : ""}
@@ -170,6 +199,7 @@ const Activity = (() => {
         <div class="task-main">
           <div class="task-name">${escapeHtml(t.Title || "")}</div>
           ${t[T.description] ? `<div class="task-desc">${escapeHtml(t[T.description])}</div>` : ""}
+          ${checklist ? `<div class="task-sub"><span class="checklist-tag">Checklist · ${plural(templateSteps(t).length, "step")}</span><span data-open-for="${t.Id}"></span></div>` : ""}
         </div>
         <div class="task-count" data-count-for="${t.Id}"></div>
         <div class="task-entry">${control}</div>
@@ -194,6 +224,15 @@ const Activity = (() => {
       const c = counts[el.dataset.countFor] || { me: 0, team: 0 };
       el.innerHTML = `<span class="count-me${c.me ? " has" : ""}" title="Logged by you today">${c.me}</span>` +
         `<span class="count-sep">/</span><span class="count-team" title="Logged by the team today">${c.team}</span>`;
+    });
+    const open = (typeof Work !== "undefined") ? Work.openCountsByType() : {};
+    document.querySelectorAll("[data-open-for]").forEach(el => {
+      const n = open[el.dataset.openFor] || 0;
+      el.innerHTML = n
+        ? `<button type="button" class="link-btn open-link" data-open-type="${el.dataset.openFor}">${n} in progress</button>`
+        : "";
+      const b = el.querySelector("button");
+      if(b) b.addEventListener("click", () => Work.showType(Number(b.dataset.openType)));
     });
     const summary = document.getElementById("todaySummary");
     if(summary){
@@ -225,9 +264,13 @@ const Activity = (() => {
           </div>
           ${voided
             ? `<span class="mine-removed">Removed</span>`
-            : `<button type="button" class="link-btn mine-remove" data-entry-id="${e.Id}">Remove</button>`}
+            : (typeof Work !== "undefined" && Work.itemForLog(e.Id))
+              ? `<button type="button" class="link-btn mine-open" data-work-id="${Work.itemForLog(e.Id).Id}" title="Completed from a checklist. Reopen the item to undo.">Checklist</button>`
+              : `<button type="button" class="link-btn mine-remove" data-entry-id="${e.Id}">Remove</button>`}
         </div>`;
     }).join("");
+    wrap.querySelectorAll(".mine-open").forEach(btn => btn.addEventListener("click", () =>
+      Work.openItem(Number(btn.dataset.workId))));
     wrap.querySelectorAll(".mine-remove").forEach(btn => btn.addEventListener("click", () => {
       const entry = recent.find(e => e.Id === Number(btn.dataset.entryId));
       if(!entry) return;
@@ -282,6 +325,11 @@ const Activity = (() => {
     if(!type) return;
     const mode = inputMode(type);
     const input = document.querySelector(`.task-input[data-type-id="${typeId}"]`);
+
+    if(hasChecklist(type)){
+      await startChecklist(type, input, false);
+      return;
+    }
 
     let ids = [""];
     if(mode !== "click"){
@@ -338,6 +386,106 @@ const Activity = (() => {
       setRowBusy(typeId, false);
       if(keepFocus && input) input.focus();
     }
+  }
+
+  /* ---------- checklist activities: Start creates a work item ---------- */
+
+  async function startChecklist(type, input, force, presetValue){
+    const mode = inputMode(type);
+    let value = presetValue !== undefined ? presetValue : (input ? input.value.trim() : "");
+    if(mode !== "click"){
+      if(!value){
+        showFeedback(type.Id, `Enter ${inputLabel(type)} first.`, "error");
+        if(input) input.focus();
+        return;
+      }
+      // References can be titles with spaces ("Payroll Clerk 26-114"), so only
+      // employee-number checklists are checked for a single, digits-only value.
+      if(mode === "employee"){
+        if(parseIds(value).length > 1){
+          showFeedback(type.Id, "Checklist items start one at a time. Enter a single employee number.", "error");
+          return;
+        }
+        if(!/^\d+$/.test(value)){
+          showFeedback(type.Id, "Employee numbers are digits only.", "error");
+          return;
+        }
+      }
+      value = value.replace(/\s+/g, " ").slice(0, 200);
+    }
+    if(busy.has(type.Id)) return;
+    busy.add(type.Id);
+    setRowBusy(type.Id, true);
+    clearFeedback(type.Id);
+    let keepFocus = true;
+    try{
+      const result = await Work.start(type, value, { force });
+      if(result.duplicate){
+        showStartDuplicate(type, value, result.duplicate);
+        keepFocus = false;
+        return;
+      }
+      if(input) input.value = "";
+      flashRow(type.Id);
+      renderCounts();
+      toast(`Started "${result.item[WORK_FIELDS.title]}". You're the owner.`, {
+        type: "success",
+        actionLabel: "Open checklist",
+        onAction: () => Work.openItem(result.item.Id),
+        duration: 8000
+      });
+    }catch(err){
+      console.error(err);
+      showFeedback(type.Id, `Not started: ${err.message}`, "error");
+    }finally{
+      busy.delete(type.Id);
+      setRowBusy(type.Id, false);
+      if(keepFocus && input) input.focus();
+    }
+  }
+
+  function showStartDuplicate(type, value, existing){
+    const el = feedbackEl(type.Id);
+    if(!el) return;
+    const W = WORK_FIELDS;
+    const owner = localPart(existing[W.ownerEmail]) === App.user.key ? "you" : escapeHtml(existing[W.ownerName] || "someone");
+    el.className = "task-feedback show warn";
+    el.innerHTML = `
+      <div class="dupe-text"><strong>${escapeHtml(value)}</strong> is already in progress, owned by ${owner}, started ${formatDate(existing[W.startedOn])}.</div>
+      <div class="dupe-actions">
+        <button type="button" class="btn btn-sm btn-navy" data-act="open">Open it</button>
+        <button type="button" class="btn btn-sm btn-ghost" data-act="again">Start another</button>
+        <button type="button" class="btn btn-sm btn-ghost" data-act="skip">Cancel</button>
+      </div>`;
+    const input = document.querySelector(`.task-input[data-type-id="${type.Id}"]`);
+    el.querySelector('[data-act="open"]').addEventListener("click", () => {
+      clearFeedback(type.Id);
+      if(input) input.value = "";
+      Work.openItem(existing.Id);
+    });
+    el.querySelector('[data-act="again"]').addEventListener("click", () => {
+      clearFeedback(type.Id);
+      startChecklist(type, input, true, value);
+    });
+    el.querySelector('[data-act="skip"]').addEventListener("click", () => {
+      clearFeedback(type.Id);
+      if(input) input.focus();
+    });
+    el.querySelector('[data-act="open"]').focus();
+  }
+
+  /* Called by Work when an item completes or reopens, so counts stay current. */
+  function ingest(entry){
+    if(entry) recent.unshift(entry);
+    renderCounts();
+    renderMine();
+  }
+
+  function markVoided(id){
+    const e = recent.find(r => r.Id === id);
+    if(e){ e[F.voided] = true; e[F.voidedBy] = App.user.name; e[F.voidedOn] = new Date().toISOString(); }
+    renderCounts();
+    renderMine();
   }
 
   /* Returns Map(identifier -> most recent matching entry) within the type's window. */
@@ -486,8 +634,8 @@ const Activity = (() => {
   }
 
   return {
-    init, refresh, reloadTypes, voidEntries,
-    inputMode, inputLabel, windowDays, groupByCategory, sortedTypes,
+    init, refresh, reloadTypes, voidEntries, renderCounts, ingest, markVoided,
+    inputMode, inputLabel, windowDays, groupByCategory, sortedTypes, templateSteps, hasChecklist,
     get types(){ return allTypes; }
   };
 })();
