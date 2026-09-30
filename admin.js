@@ -9,6 +9,7 @@ const Admin = (() => {
   const M = TEAM_FIELDS;
   let wired = false;
   let editingId = null;
+  let tplSteps = [];      // checklist template being edited in the activity modal
 
   function init(){
     if(!App.isAdmin) return;
@@ -27,6 +28,8 @@ const Admin = (() => {
     on("addStaffBtn", "click", addMember);
     on("newStaffEmail", "keydown", e => { if(e.key === "Enter"){ e.preventDefault(); addMember(); } });
     on("showInactiveTypes", "change", renderTypes);
+    on("atAddStepBtn", "click", addTplStep);
+    on("atNewStep", "keydown", e => { if(e.key === "Enter"){ e.preventDefault(); addTplStep(); } });
   }
 
   /* ---------- activity types ---------- */
@@ -42,9 +45,9 @@ const Admin = (() => {
     const groups = Activity.groupByCategory(types);
     wrap.innerHTML = `
       <div class="table-scroll"><table class="plain types">
-        <thead><tr><th>Order</th><th>Activity</th><th>Asks for</th><th>Duplicate check</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>Order</th><th>Activity</th><th>Asks for</th><th>Checklist</th><th>Duplicate check</th><th>Status</th><th></th></tr></thead>
         <tbody>${groups.map(g => `
-          <tr class="grp"><th colspan="6">${escapeHtml(g.name)}</th></tr>
+          <tr class="grp"><th colspan="7">${escapeHtml(g.name)}</th></tr>
           ${g.types.map(t => {
             const active = t[T.active] !== false;
             const mode = Activity.inputMode(t);
@@ -53,7 +56,8 @@ const Admin = (() => {
               <td class="num">${t[T.sortOrder] ?? ""}</td>
               <td><strong>${escapeHtml(t.Title || "")}</strong>${t[T.description] ? `<div class="muted small">${escapeHtml(t[T.description])}</div>` : ""}</td>
               <td>${mode === "click" ? "Nothing (one click)" : escapeHtml(Activity.inputLabel(t))}</td>
-              <td>${mode === "click" ? "—" : days > 0 ? `Last ${plural(days, "day")}` : "Off"}</td>
+              <td>${Activity.hasChecklist(t) ? plural(Activity.templateSteps(t).length, "step") : "—"}</td>
+              <td>${Activity.hasChecklist(t) ? "Open items" : mode === "click" ? "—" : days > 0 ? `Last ${plural(days, "day")}` : "Off"}</td>
               <td>${active ? "Active" : "Off"}</td>
               <td class="actions">
                 <button type="button" class="link-btn" data-edit="${t.Id}">Edit</button>
@@ -84,6 +88,11 @@ const Admin = (() => {
     $("atDescription").value = t ? t[T.description] || "" : "";
     $("typeSaveMsg").textContent = "";
     $("typeRenameHint").hidden = !t;
+    tplSteps = t ? Activity.templateSteps(t).map(x => ({ ...x })) : [];
+    $("atNewStep").value = "";
+    $("atNewStepExt").checked = false;
+    $("atStepsHint").hidden = !(t && tplSteps.length);
+    renderTplSteps();
 
     const cats = [...new Set(Activity.types.map(x => (x[T.category] || "").trim()).filter(Boolean))].sort();
     $("categoryOptions").innerHTML = cats.map(c => `<option value="${escapeHtml(c)}"></option>`).join("");
@@ -102,7 +111,7 @@ const Admin = (() => {
     const mode = document.getElementById("atInputType").value;
     const click = mode === "Click Only";
     document.getElementById("atInputLabelRow").hidden = click;
-    document.getElementById("atDupRow").hidden = click;
+    document.getElementById("atDupRow").hidden = click || tplSteps.length > 0;
     document.getElementById("atInputLabel").placeholder = mode === "Reference" ? "e.g. Pay period, Case #" : "Employee #";
   }
 
@@ -120,6 +129,9 @@ const Admin = (() => {
     const clash = Activity.types.find(x =>
       x.Id !== editingId && x[T.active] !== false && String(x.Title || "").trim().toLowerCase() === name.toLowerCase());
     if(clash){ msg.className = "save-msg err"; msg.textContent = "An active activity already has that name."; return; }
+    tplSteps = tplSteps.map(x => ({ text: String(x.text || "").trim(), external: !!x.external })).filter(x => x.text);
+    const pending = $("atNewStep").value.trim();
+    if(pending){ tplSteps.push({ text: pending, external: $("atNewStepExt").checked }); $("atNewStep").value = ""; }
     const dup = dupRaw === "" ? CONFIG.defaultDuplicateWindowDays : Number(dupRaw);
     if(!Number.isFinite(dup) || dup < 0){ msg.className = "save-msg err"; msg.textContent = "Duplicate check must be 0 or more days."; return; }
 
@@ -130,7 +142,10 @@ const Admin = (() => {
       [T.inputLabel]: inputType === "Click Only" ? "" : label,
       [T.duplicateWindowDays]: inputType === "Click Only" ? 0 : Math.round(dup),
       [T.sortOrder]: orderRaw === "" ? null : Number(orderRaw),
-      [T.description]: $("atDescription").value.trim()
+      [T.description]: $("atDescription").value.trim(),
+      [T.checklistSteps]: tplSteps.length
+        ? JSON.stringify(tplSteps.map(x => ({ text: x.text, external: !!x.external })))
+        : ""
     };
     if(!editingId) body[T.active] = true;
 
@@ -152,6 +167,45 @@ const Admin = (() => {
     }finally{
       btn.disabled = false;
     }
+  }
+
+  /* ---------- checklist template editor ---------- */
+
+  function renderTplSteps(){
+    const ol = document.getElementById("atSteps");
+    ol.innerHTML = tplSteps.map((st, i) => `
+      <li class="tpl-step" data-i="${i}">
+        <input type="text" class="tpl-text" value="${escapeHtml(st.text)}" aria-label="Step ${i + 1}">
+        <label class="check small" title="Done by another office (e.g. Civil Service, HR)"><input type="checkbox" class="tpl-ext" ${st.external ? "checked" : ""}> Other office</label>
+        <button type="button" class="icon-btn" data-act="up" ${i === 0 ? "disabled" : ""} aria-label="Move up">↑</button>
+        <button type="button" class="icon-btn" data-act="down" ${i === tplSteps.length - 1 ? "disabled" : ""} aria-label="Move down">↓</button>
+        <button type="button" class="icon-btn danger" data-act="del" aria-label="Remove step">&times;</button>
+      </li>`).join("");
+    ol.querySelectorAll(".tpl-step").forEach(li => {
+      const i = Number(li.dataset.i);
+      li.querySelector(".tpl-text").addEventListener("input", e => { tplSteps[i].text = e.target.value; });
+      li.querySelector(".tpl-ext").addEventListener("change", e => { tplSteps[i].external = e.target.checked; });
+      li.querySelectorAll("[data-act]").forEach(b => b.addEventListener("click", () => {
+        const act = b.dataset.act;
+        if(act === "del") tplSteps.splice(i, 1);
+        if(act === "up" && i > 0) [tplSteps[i - 1], tplSteps[i]] = [tplSteps[i], tplSteps[i - 1]];
+        if(act === "down" && i < tplSteps.length - 1) [tplSteps[i + 1], tplSteps[i]] = [tplSteps[i], tplSteps[i + 1]];
+        renderTplSteps();
+        syncInputTypeFields();
+      }));
+    });
+  }
+
+  function addTplStep(){
+    const input = document.getElementById("atNewStep");
+    const text = input.value.trim();
+    if(!text){ input.focus(); return; }
+    tplSteps.push({ text, external: document.getElementById("atNewStepExt").checked });
+    input.value = "";
+    document.getElementById("atNewStepExt").checked = false;
+    renderTplSteps();
+    syncInputTypeFields();
+    input.focus();
   }
 
   async function toggleType(id){
