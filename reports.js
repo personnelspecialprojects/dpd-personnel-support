@@ -144,7 +144,9 @@ const Reports = (() => {
       `<strong>${resolved.length}</strong> ${resolved.length === 1 ? "inquiry" : "inquiries"} resolved, ` +
       `${fromLabel} to ${toLabel}. ` +
       `${avg !== null ? `Inquiries took ${avg} days on average to resolve. ` : ""}` +
-      `${plural(open, "inquiry", "inquiries")} open right now.`;
+      `${plural(open, "inquiry", "inquiries")} open right now` +
+      `${typeof Work !== "undefined" ? `, and ${plural(Work.all.filter(Work.isOpen).length, "checklist item")} in progress` : ""}.` +
+      ` Checklist items count here when they're marked complete.`;
 
     if(!groups.length){
       out.innerHTML = `<div class="empty-block"><p>Nothing was logged in this date range.</p></div>`;
