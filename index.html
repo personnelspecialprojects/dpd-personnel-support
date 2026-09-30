@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Personnel Support</title>
+<link rel="stylesheet" href="styles.css">
+<script src="https://alcdn.msauth.net/browser/2.35.0/js/msal-browser.min.js"
+  onerror="this.onerror=null;var s=document.createElement('script');s.src='https://alcdn.msftauth.net/browser/2.35.0/js/msal-browser.min.js';document.head.appendChild(s);"></script>
+</head>
+<body>
+
+<header class="app-header">
+  <div>
+    <h1>Personnel Support</h1>
+    <div class="sub">Dallas Police Department, Personnel Support Team</div>
+  </div>
+  <div id="userBox"></div>
+</header>
+
+<!-- ======= Gates ======= -->
+<section id="signInScreen" class="gate">
+  <p>Sign in with your dallaspolice.gov account to continue.</p>
+  <button id="signInBtn" type="button" class="btn btn-navy btn-lg">Sign in</button>
+</section>
+
+<section id="loadingScreen" class="gate" hidden>
+  <p class="muted">Loading your workspace...</p>
+</section>
+
+<section id="notAuthorizedScreen" class="gate" hidden>
+  <h2>Access not available</h2>
+  <p id="notAuthMsg" class="muted narrow"></p>
+  <button id="notAuthSignOutBtn" type="button" class="btn btn-ghost">Sign out</button>
+</section>
+
+<!-- ======= App ======= -->
+<main id="mainApp" hidden>
+  <nav class="tabs" role="tablist">
+    <button type="button" class="tab active" role="tab" aria-selected="true" data-view="logView">Log activity</button>
+    <button type="button" class="tab" role="tab" aria-selected="false" data-view="ticketsView">Inquiries <span id="openInquiryBadge" class="tab-badge" hidden></span></button>
+    <button type="button" class="tab" role="tab" aria-selected="false" data-view="reportsView">Reports</button>
+    <button type="button" class="tab" role="tab" aria-selected="false" data-view="auditView">Audit log</button>
+    <button type="button" class="tab" role="tab" aria-selected="false" data-view="adminView" data-admin-only hidden>Admin</button>
+  </nav>
+
+  <!-- LOG ACTIVITY -->
+  <div class="view active" id="logView">
+    <div class="log-layout">
+      <section class="board-wrap">
+        <div class="board-head">
+          <h2>Log completed work</h2>
+          <p id="todaySummary" class="muted"></p>
+        </div>
+        <p class="how">Type the number and press Enter. To log several at once, separate them with spaces or commas.</p>
+        <div id="board"></div>
+      </section>
+      <aside class="mine">
+        <h3>Your recent entries</h3>
+        <div id="myRecent"></div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- INQUIRIES -->
+  <div class="view" id="ticketsView">
+    <div class="toolbar">
+      <button type="button" class="btn btn-navy" id="openManualEntryBtn">New manual inquiry</button>
+      <select id="filterStatus" aria-label="Filter by status">
+        <option value="">All statuses</option>
+        <option value="New">New</option>
+        <option value="In Progress">In Progress</option>
+        <option value="Completed">Completed</option>
+        <option value="Merged">Merged</option>
+      </select>
+      <input type="text" id="searchBox" placeholder="Search name, email, title, #" aria-label="Search inquiries">
+      <label class="check"><input type="checkbox" id="hideMergedCheckbox" checked> Hide merged</label>
+      <div class="stat-pills" id="statPills"></div>
+    </div>
+    <div class="table-scroll">
+      <table class="data" id="ticketsTable">
+        <thead>
+          <tr>
+            <th data-sort="ID">#</th>
+            <th data-sort="Received">Received</th>
+            <th data-sort="Title">Title</th>
+            <th data-sort="Email">Requestor</th>
+            <th data-sort="Status">Status</th>
+            <th data-sort="CompletedBy">Completed by</th>
+          </tr>
+        </thead>
+        <tbody id="ticketsBody"></tbody>
+      </table>
+    </div>
+    <div id="emptyState" class="empty-block" hidden><p>No inquiries match these filters.</p></div>
+  </div>
+
+  <!-- REPORTS -->
+  <div class="view" id="reportsView">
+    <section class="panel">
+      <div class="toolbar">
+        <select id="rpPreset" aria-label="Date range">
+          <option value="today">Today</option>
+          <option value="thisWeek">This week</option>
+          <option value="lastWeek">Last week</option>
+          <option value="thisMonth" selected>This month</option>
+          <option value="lastMonth">Last month</option>
+          <option value="last30">Last 30 days</option>
+          <option value="custom">Custom range</option>
+        </select>
+        <label class="inline-label">From <input type="date" id="rpFrom"></label>
+        <label class="inline-label">To <input type="date" id="rpTo"></label>
+        <button type="button" class="btn btn-navy" id="rpRunBtn">Show report</button>
+        <div class="toolbar-end">
+          <button type="button" class="btn btn-ghost" id="rpExportSummaryBtn">Export summary</button>
+          <button type="button" class="btn btn-ghost" id="rpExportEntriesBtn">Export all entries</button>
+        </div>
+      </div>
+      <p id="rpSummary" class="report-summary"></p>
+      <div id="rpMatrix"></div>
+    </section>
+
+    <section class="panel">
+      <h3>Look up an employee or reference number</h3>
+      <p class="muted small">Shows everything ever logged against that number, including removed entries.</p>
+      <div class="toolbar">
+        <input type="text" id="lookupInput" placeholder="Employee # or reference" aria-label="Number to look up">
+        <button type="button" class="btn btn-navy" id="lookupBtn">Look up</button>
+      </div>
+      <div id="lookupResults"></div>
+    </section>
+  </div>
+
+  <!-- AUDIT LOG -->
+  <div class="view" id="auditView">
+    <div class="toolbar">
+      <input type="text" id="auditSearchBox" placeholder="Search inquiry #, staff member, action" aria-label="Search audit log">
+      <div class="stat-pills" id="auditPills"></div>
+      <div class="toolbar-end">
+        <button type="button" class="btn btn-ghost" id="exportAuditCsvBtn">Export audit log</button>
+      </div>
+    </div>
+    <p class="muted small">Every change made to an inquiry. Activity entries keep their own history in the Activity Log list.</p>
+    <div class="table-scroll">
+      <table class="data">
+        <thead><tr><th>Time</th><th>Inquiry #</th><th>Staff member</th><th>Action</th></tr></thead>
+        <tbody id="auditBody"></tbody>
+      </table>
+    </div>
+    <div id="auditEmptyState" class="empty-block" hidden><p>No audit entries match your search.</p></div>
+  </div>
+
+  <!-- ADMIN -->
+  <div class="view" id="adminView" data-admin-only hidden>
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h3>Activities</h3>
+          <p class="muted small">Each active activity is a row on the Log activity tab. Rows are grouped by category, and the order number sets both row order and category order.</p>
+        </div>
+        <button type="button" class="btn btn-navy" id="addTypeBtn">Add activity</button>
+      </div>
+      <label class="check small"><input type="checkbox" id="showInactiveTypes"> Show activities that are turned off</label>
+      <div id="typesTable"></div>
+    </section>
+
+    <section class="panel">
+      <h3>Aging alerts for inquiries</h3>
+      <p class="muted small">Open inquiries get a colored stripe once they pass a threshold. If an inquiry passes several, the longest one wins.</p>
+      <div class="field-block">
+        <span class="field-label">Color</span>
+        <div id="colorPalette" class="palette"></div>
+      </div>
+      <div class="toolbar">
+        <label class="stack-label">After
+          <input type="number" id="ruleThresholdValue" min="1" value="24" class="narrow-input">
+        </label>
+        <label class="stack-label">Unit
+          <select id="ruleThresholdUnit"><option value="Hours">Hours</option><option value="Days">Days</option></select>
+        </label>
+        <label class="check" id="excludeWeekendsWrap" hidden><input type="checkbox" id="ruleExcludeWeekends"> Business days only</label>
+        <button type="button" class="btn btn-navy" id="createRuleBtn">Create alert rule</button>
+      </div>
+      <div id="rulesList"></div>
+    </section>
+
+    <section class="panel">
+      <h3>Team access</h3>
+      <p class="muted small">People on this list can sign in. Matching ignores the domain, so a dallaspolice.gov or dallascityhall.com address covers both. Admins see this tab.</p>
+      <div class="toolbar">
+        <input type="email" id="newStaffEmail" placeholder="firstname.lastname@dallaspolice.gov" class="grow-input" aria-label="Email address">
+        <select id="newStaffRole" aria-label="Role"><option value="Staff">Staff</option><option value="Admin">Admin</option></select>
+        <button type="button" class="btn btn-navy" id="addStaffBtn">Add person</button>
+      </div>
+      <div id="staffSaveMsg" class="save-msg"></div>
+      <div id="staffList"></div>
+    </section>
+  </div>
+</main>
+
+<!-- ======= Inquiry modal ======= -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-header">
+      <h2 id="modalTitle">Inquiry</h2>
+      <button type="button" id="modalClose" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="field-row">
+        <label for="mRequesterName">Requestor</label>
+        <div>
+          <input type="text" id="mRequesterName">
+          <div class="hint" id="mRequesterNameHint" hidden>Guessed from the email address. Correct it if it's wrong.</div>
+        </div>
+      </div>
+      <div class="field-row"><label>Title</label><div class="val" id="mReq"></div></div>
+      <div class="field-row"><label>Contact</label><div class="val" id="mEmail"></div></div>
+      <div class="field-row"><label>Received</label><div class="val" id="mCreated"></div></div>
+      <div class="field-row">
+        <label>Problem <button type="button" id="problemLockBtn" class="icon-btn" title="Unlock to trim (not for adding notes)">🔒</button></label>
+        <div>
+          <div class="val problem-box" id="mProblem"></div>
+          <textarea id="mProblemEdit" class="problem-edit" hidden></textarea>
+          <div class="hint warn-text" id="problemEditHint" hidden>Unlocked for trimming only. Put new information in Internal notes or Customer note. Locks again when you save.</div>
+        </div>
+      </div>
+      <div class="field-row">
+        <label></label>
+        <div>
+          <a href="#" id="toggleMergeLink" class="merge-link">Duplicate or reply? Merge into another inquiry instead</a>
+          <div id="mergePanel" class="merge-panel" hidden>
+            <select id="mergeTargetSelect" aria-label="Original inquiry"></select>
+            <div class="hint">Closes #<span id="mergeSourceId"></span> without emailing the customer and copies its problem text into the original inquiry's internal notes.</div>
+            <button type="button" class="btn btn-navy" id="mergeBtn">Merge and close this inquiry</button>
+          </div>
+        </div>
+      </div>
+      <div class="field-row">
+        <label for="mStatus">Status</label>
+        <select id="mStatus">
+          <option value="New">New</option>
+          <option value="In Progress">In Progress</option>
+          <option value="Completed">Completed</option>
+          <option value="Merged">Merged</option>
+        </select>
+      </div>
+      <div class="field-row" id="noNotifyRow" hidden>
+        <label></label>
+        <div>
+          <label class="check"><input type="checkbox" id="mNoNotify"> Close without emailing the customer</label>
+          <div class="hint">Use this if the customer already replied (for example, said thanks).</div>
+        </div>
+      </div>
+      <div class="field-row">
+        <label for="mInternal">Internal notes</label>
+        <textarea id="mInternal" placeholder="Staff-only notes"></textarea>
+      </div>
+      <div class="field-row">
+        <label for="mCustomer">Customer note</label>
+        <div>
+          <textarea id="mCustomer" placeholder="Emailed to the requestor when the inquiry is marked Completed"></textarea>
+          <div class="hint">Sent automatically once Status is Completed and you save.</div>
+        </div>
+      </div>
+      <div class="field-row" id="completedMetaRow" hidden>
+        <label>Completed</label>
+        <div class="val" id="mCompletedMeta"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <div class="save-msg" id="saveMsg"></div>
+      <button type="button" class="btn btn-ghost" id="cancelBtn">Cancel</button>
+      <button type="button" class="btn btn-red" id="saveBtn">Save changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- ======= Manual inquiry modal ======= -->
+<div class="modal-overlay" id="manualEntryOverlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="meTitleHeading">
+    <div class="modal-header">
+      <h2 id="meTitleHeading">New manual inquiry</h2>
+      <button type="button" id="manualEntryClose" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="field-row">
+        <label>Contact method</label>
+        <div class="radio-row">
+          <label class="check"><input type="radio" name="meMethod" id="meMethodPhone" value="Phone" checked> Phone</label>
+          <label class="check"><input type="radio" name="meMethod" id="meMethodEmail" value="Email"> Email</label>
+          <label class="check"><input type="radio" name="meMethod" id="meMethodWalkin" value="Walk-in"> Walk-in</label>
+        </div>
+      </div>
+      <div class="field-row"><label for="meRequesterName">Requestor</label><input type="text" id="meRequesterName" placeholder="First Last"></div>
+      <div class="field-row" id="mePhoneRow"><label for="mePhoneNumber">Phone</label><input type="text" id="mePhoneNumber" placeholder="214-555-0100"></div>
+      <div class="field-row" id="meEmailRow" hidden><label for="meEmail">Email</label><input type="email" id="meEmail" placeholder="name@dallaspolice.gov"></div>
+      <div class="field-row"><label for="meTitle">Problem title</label><input type="text" id="meTitle" placeholder="Short summary"></div>
+      <div class="field-row"><label for="meDescription">Description</label><textarea id="meDescription" placeholder="What happened, what was discussed"></textarea></div>
+      <div class="field-row">
+        <label for="meStatus">Status</label>
+        <select id="meStatus">
+          <option value="New">New</option>
+          <option value="In Progress">In Progress</option>
+          <option value="Completed">Completed</option>
+        </select>
+      </div>
+      <div class="field-row"><label for="meInternal">Internal notes</label><textarea id="meInternal" placeholder="Staff-only notes (optional)"></textarea></div>
+      <div class="field-row" id="meCustomerNoteRow" hidden><label for="meCustomerNote">Customer note</label><textarea id="meCustomerNote" placeholder="Emailed to the requestor if there's an email address and emailing isn't turned off below"></textarea></div>
+      <div class="field-row" id="meNoNotifyRow" hidden>
+        <label></label>
+        <div>
+          <label class="check"><input type="checkbox" id="meNoNotify" checked> Don't email the customer</label>
+          <div class="hint">Checked by default for issues resolved in person or by phone.</div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <div class="save-msg" id="meSaveMsg"></div>
+      <button type="button" class="btn btn-ghost" id="meCancelBtn">Cancel</button>
+      <button type="button" class="btn btn-navy" id="meSaveBtn">Create inquiry</button>
+    </div>
+  </div>
+</div>
+
+<!-- ======= Activity type modal ======= -->
+<div class="modal-overlay" id="typeModalOverlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="typeModalTitle">
+    <div class="modal-header">
+      <h2 id="typeModalTitle">Add activity</h2>
+      <button type="button" id="typeModalClose" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="field-row">
+        <label for="atName">Name</label>
+        <div>
+          <input type="text" id="atName" placeholder="e.g. Exit processed">
+          <div class="hint" id="typeRenameHint" hidden>Renaming changes the board and future entries. Past entries keep the name they were logged under.</div>
+        </div>
+      </div>
+      <div class="field-row">
+        <label for="atCategory">Category</label>
+        <div>
+          <input type="text" id="atCategory" list="categoryOptions" placeholder="e.g. Separations">
+          <datalist id="categoryOptions"></datalist>
+          <div class="hint">Pick an existing category or type a new one.</div>
+        </div>
+      </div>
+      <div class="field-row">
+        <label for="atInputType">Staff enter</label>
+        <select id="atInputType">
+          <option value="Employee Number">An employee number</option>
+          <option value="Reference">A reference (letters allowed)</option>
+          <option value="Click Only">Nothing, just click Log</option>
+        </select>
+      </div>
+      <div class="field-row" id="atInputLabelRow">
+        <label for="atInputLabel">Box label</label>
+        <input type="text" id="atInputLabel" placeholder="Employee #">
+      </div>
+      <div class="field-row" id="atDupRow">
+        <label for="atDupDays">Duplicate check</label>
+        <div>
+          <input type="number" id="atDupDays" min="0" class="narrow-input"> days
+          <div class="hint">Warns if the same number was logged for this activity within this many days. 0 turns it off. Use a long window for one-time events like exits.</div>
+        </div>
+      </div>
+      <div class="field-row">
+        <label for="atSortOrder">Order</label>
+        <div>
+          <input type="number" id="atSortOrder" class="narrow-input">
+          <div class="hint">Lower numbers appear first. Counting by tens leaves room to insert later.</div>
+        </div>
+      </div>
+      <div class="field-row">
+        <label for="atDescription">Helper text</label>
+        <input type="text" id="atDescription" placeholder="Optional, one short line shown under the name">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <div class="save-msg" id="typeSaveMsg"></div>
+      <button type="button" class="btn btn-ghost" id="typeCancelBtn">Cancel</button>
+      <button type="button" class="btn btn-navy" id="typeSaveBtn">Save activity</button>
+    </div>
+  </div>
+</div>
+
+<div id="toastHost" aria-live="polite"></div>
+
+<script src="config.js"></script>
+<script src="core.js"></script>
+<script src="activity.js"></script>
+<script src="tickets.js"></script>
+<script src="reports.js"></script>
+<script src="admin.js"></script>
+<script>boot();</script>
+</body>
+</html>
