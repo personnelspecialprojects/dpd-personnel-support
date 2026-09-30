@@ -132,7 +132,7 @@ async function startSession(account){
     console.error(err);
     toast(`Activities couldn't load: ${err.message}`, { type: "error", duration: 0 });
   }
-  const results = await Promise.allSettled([Tickets.init()]);
+  const results = await Promise.allSettled([Work.init(), Tickets.init()]);
   results.forEach(r => { if(r.status === "rejected") console.error(r.reason); });
   Reports.init();
   Admin.init();
@@ -160,7 +160,7 @@ async function poll(){
     console.warn("Token refresh failed; will retry next cycle.", err);
     return;
   }
-  const results = await Promise.allSettled([Activity.refresh(), Tickets.refresh()]);
+  const results = await Promise.allSettled([Activity.refresh(), Work.refresh(), Tickets.refresh()]);
   results.forEach(r => { if(r.status === "rejected") console.warn("Refresh problem:", r.reason); });
   markSynced();
 }
@@ -277,6 +277,11 @@ async function spGetAll(listTitle, query = ""){
   return out;
 }
 
+async function spGetItem(listTitle, id){
+  const res = await spRequest(listItemsUrl(listTitle, `(${id})`));
+  return res.json();
+}
+
 async function spCreate(listTitle, body){
   const res = await spWrite(listItemsUrl(listTitle), "POST", body);
   return res.json();
@@ -311,6 +316,23 @@ function escapeHtml(s){
 
 function localPart(email){
   return String(email || "").split("@")[0].trim().toLowerCase();
+}
+
+/* "jane.doe2@dallaspolice.gov" -> "Jane Doe". Used where only an email is on file. */
+function nameFromEmail(email){
+  const parts = localPart(email).replace(/[0-9]+$/, "").split(/[._-]+/).filter(Boolean);
+  return parts.map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(" ") || String(email || "");
+}
+
+/* Display name for a roster member: the signed-in user's real name, otherwise derived. */
+function teamMemberName(email){
+  if(App.user && localPart(email) === App.user.key) return App.user.name;
+  return nameFromEmail(email);
+}
+
+function daysSince(d){
+  if(!d) return null;
+  return Math.max(0, Math.floor((Date.now() - new Date(d).getTime()) / 86400000));
 }
 
 function formatDate(d){
