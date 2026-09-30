@@ -17,7 +17,9 @@ const CONFIG = {
     requests: "Requests",
     requestAudit: "Request Audit Log",
     alertRules: "Alert Rules",
-    team: "Team Members"
+    team: "Team Members",
+    workItems: "Work Items",
+    workItemLog: "Work Item Log"
   },
 
   adminContact: "Jared Nielsen",
@@ -25,7 +27,8 @@ const CONFIG = {
   recentDays: 14,                   // how far back the Log Activity tab loads
   defaultDuplicateWindowDays: 30,   // used when an activity type leaves the window blank
   maxBatch: 50,                     // most IDs accepted in one submission
-  undoSeconds: 10                   // how long the Undo button stays on the confirmation
+  undoSeconds: 10,                  // how long the Undo button stays on the confirmation
+  closedWorkDays: 30                // how long completed/cancelled work items stay in the Tracked work tab
 };
 
 /* Activity Types list — the task menu, managed from the Admin tab */
@@ -37,7 +40,8 @@ const TYPE_FIELDS = {
   duplicateWindowDays: "DuplicateWindowDays", // Number — 0 turns duplicate checking off
   sortOrder: "SortOrder",                 // Number — controls row AND category order
   description: "Description",             // Single line of text (optional helper text)
-  active: "Active"                        // Yes/No
+  active: "Active",                       // Yes/No
+  checklistSteps: "ChecklistSteps"        // Multiple lines of text (plain). Empty = simple one-step logging.
 };
 
 const INPUT_TYPES = ["Employee Number", "Reference", "Click Only"];
@@ -99,6 +103,35 @@ const ALERT_FIELDS = {
 const TEAM_FIELDS = {
   title: "Title",   // email address
   role: "Role"      // Choice: Staff | Admin
+};
+
+/* Work Items list — one row per started checklist item (e.g. one job posting) */
+const WORK_FIELDS = {
+  title: "Title",                     // "<activity> — <identifier>"
+  activityTypeId: "ActivityTypeId",   // Number
+  activityName: "ActivityName",       // Single line — snapshot
+  category: "ActivityCategory",       // Single line — snapshot
+  identifier: "Identifier",           // Single line — employee #, posting #, etc.
+  status: "Status",                   // Choice: Open | Completed | Cancelled
+  ownerName: "OwnerName",             // Single line — person currently responsible
+  ownerEmail: "OwnerEmail",           // Single line
+  startedBy: "StartedBy",             // Single line
+  startedOn: "StartedOn",             // Date and time
+  lastActivityOn: "LastActivityOn",   // Date and time — updated on every change
+  closedOn: "ClosedOn",               // Date and time — completed or cancelled
+  closedBy: "ClosedBy",               // Single line
+  steps: "Steps",                     // Multiple lines of text (plain) — this item's own checklist (JSON)
+  completionLogId: "CompletionLogId"  // Number — Activity Log entry written on completion
+};
+
+/* Work Item Log list — history and notes for each work item */
+const WORKLOG_FIELDS = {
+  title: "Title",
+  workItemId: "WorkItemId",           // Number
+  action: "Action",                   // Multiple lines of text (plain)
+  staffName: "StaffName",             // Single line
+  staffEmail: "StaffEmail",           // Single line
+  loggedAt: "LoggedAt"                // Date and time
 };
 
 const PRESET_COLORS = [
