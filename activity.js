@@ -1,0 +1,493 @@
+/* ============================================================
+   activity.js — the Log Activity tab.
+   One row per active activity type. Type an ID, press Enter.
+   Several IDs separated by spaces/commas/new lines log at once.
+   ============================================================ */
+
+const Activity = (() => {
+  const T = TYPE_FIELDS;
+  const F = LOG_FIELDS;
+  let allTypes = [];
+  let recent = [];          // every entry from the last CONFIG.recentDays days (whole team)
+  let boardSignature = "";
+  const busy = new Set();
+
+  /* ---------- loading ---------- */
+
+  async function init(){
+    await Promise.all([loadTypes(), loadRecent()]);
+    buildBoard();
+    renderCounts();
+    renderMine();
+    ViewHooks.logView = () => { renderCounts(); renderMine(); };
+  }
+
+  async function refresh(){
+    await Promise.all([loadTypes(), loadRecent()]);
+    buildBoard();          // only rebuilds if the activity list actually changed
+    renderCounts();
+    renderMine();
+  }
+
+  async function loadTypes(){
+    allTypes = await spGetAll(CONFIG.lists.activityTypes, "$top=500");
+  }
+
+  async function reloadTypes(){
+    await loadTypes();
+    buildBoard();
+    renderCounts();
+  }
+
+  async function loadRecent(){
+    const since = addDays(startOfToday(), -(CONFIG.recentDays - 1));
+    recent = await spGetAll(CONFIG.lists.activityLog,
+      filterQuery(`${F.loggedAt} ge ${odataDate(since)}`, "$top=2000"));
+  }
+
+  /* ---------- type helpers ---------- */
+
+  function isActive(t){ return t[T.active] !== false; }
+
+  function inputMode(t){
+    const v = String(t[T.inputType] || "Employee Number").toLowerCase();
+    if(v.startsWith("click")) return "click";
+    if(v.startsWith("ref")) return "reference";
+    return "employee";
+  }
+
+  function inputLabel(t){
+    if(t[T.inputLabel]) return t[T.inputLabel];
+    return inputMode(t) === "employee" ? "Employee #" : "Reference";
+  }
+
+  function windowDays(t){
+    const v = t[T.duplicateWindowDays];
+    if(v === null || v === undefined || v === "") return CONFIG.defaultDuplicateWindowDays;
+    return Number(v) || 0;
+  }
+
+  function sortNum(t){
+    const n = Number(t[T.sortOrder]);
+    return Number.isFinite(n) && t[T.sortOrder] !== null && t[T.sortOrder] !== "" ? n : 9999;
+  }
+
+  function sortedTypes(list){
+    return list.slice().sort((a, b) =>
+      sortNum(a) - sortNum(b) || String(a.Title || "").localeCompare(String(b.Title || "")));
+  }
+
+  /* Categories appear in the order of their lowest-numbered activity. */
+  function groupByCategory(types){
+    const groups = [];
+    const index = {};
+    sortedTypes(types).forEach(t => {
+      const name = (t[T.category] || "General").trim() || "General";
+      if(!(name in index)){ index[name] = groups.length; groups.push({ name, types: [] }); }
+      groups[index[name]].types.push(t);
+    });
+    return groups;
+  }
+
+  function isMine(e){ return localPart(e[F.staffEmail]) === App.user.key; }
+
+  /* ---------- board ---------- */
+
+  function buildBoard(){
+    const types = allTypes.filter(isActive);
+    const sig = JSON.stringify(sortedTypes(types).map(t =>
+      [t.Id, t.Title, t[T.category], t[T.inputType], t[T.inputLabel], t[T.description], t[T.sortOrder]]));
+    if(sig === boardSignature) return;
+    boardSignature = sig;
+
+    const board = document.getElementById("board");
+    // keep anything half-typed across a rebuild (e.g. an admin edits the list mid-shift)
+    const saved = {};
+    board.querySelectorAll(".task-input").forEach(i => { if(i.value) saved[i.dataset.typeId] = i.value; });
+    const focusedId = document.activeElement && document.activeElement.classList.contains("task-input")
+      ? document.activeElement.dataset.typeId : null;
+
+    if(!types.length){
+      board.innerHTML = `<div class="empty-block">
+        <p><strong>No activities are set up yet.</strong></p>
+        <p>${App.isAdmin
+          ? 'Add the tasks your team completes in the <a href="#" id="goAdminLink">Admin tab</a>. Each one becomes a row here.'
+          : `Ask ${escapeHtml(CONFIG.adminContact)} to add your team's tasks.`}</p></div>`;
+      const link = document.getElementById("goAdminLink");
+      if(link) link.addEventListener("click", e => { e.preventDefault(); switchTab("adminView"); });
+      return;
+    }
+
+    board.innerHTML = `
+      <div class="board-colhead" aria-hidden="true">
+        <span>Activity</span><span class="c-today">Today: you / team</span><span>Log it</span>
+      </div>
+      ${groupByCategory(types).map(g => `
+        <section class="task-group">
+          <h3 class="group-name">${escapeHtml(g.name)}</h3>
+          ${g.types.map(rowHtml).join("")}
+        </section>`).join("")}`;
+
+    board.querySelectorAll(".task-log").forEach(btn =>
+      btn.addEventListener("click", () => submit(Number(btn.dataset.typeId))));
+    board.querySelectorAll(".task-input").forEach(input => {
+      input.addEventListener("keydown", e => {
+        if(e.key === "Enter"){ e.preventDefault(); submit(Number(input.dataset.typeId)); }
+      });
+      input.addEventListener("input", () => clearFeedback(Number(input.dataset.typeId), true));
+      // Single-line inputs silently drop line breaks, which would glue a pasted
+      // Excel column into one long number. Convert breaks/tabs to spaces instead.
+      input.addEventListener("paste", e => {
+        const text = e.clipboardData && e.clipboardData.getData("text");
+        if(!text || !/[\r\n\t]/.test(text)) return;
+        e.preventDefault();
+        const clean = text.replace(/[\r\n\t]+/g, " ").trim();
+        const start = input.selectionStart ?? input.value.length;
+        const end = input.selectionEnd ?? input.value.length;
+        const before = input.value.slice(0, start);
+        const sep = before && !/\s$/.test(before) ? " " : "";
+        input.value = before + sep + clean + input.value.slice(end);
+        const caret = (before + sep + clean).length;
+        input.setSelectionRange(caret, caret);
+        clearFeedback(Number(input.dataset.typeId), true);
+      });
+      if(saved[input.dataset.typeId]) input.value = saved[input.dataset.typeId];
+      if(focusedId === input.dataset.typeId) input.focus();
+    });
+  }
+
+  function rowHtml(t){
+    const mode = inputMode(t);
+    const label = inputLabel(t);
+    const control = mode === "click"
+      ? `<button type="button" class="btn btn-navy task-log task-log-wide" data-type-id="${t.Id}">Log one</button>`
+      : `<input class="task-input" data-type-id="${t.Id}" type="text" autocomplete="off" spellcheck="false"
+            ${mode === "employee" ? 'inputmode="numeric"' : ""}
+            placeholder="${escapeHtml(label)}" aria-label="${escapeHtml(`${t.Title}: ${label}`)}">
+         <button type="button" class="btn btn-navy task-log" data-type-id="${t.Id}">Log</button>`;
+    return `
+      <div class="task-row" data-row-for="${t.Id}">
+        <div class="task-main">
+          <div class="task-name">${escapeHtml(t.Title || "")}</div>
+          ${t[T.description] ? `<div class="task-desc">${escapeHtml(t[T.description])}</div>` : ""}
+        </div>
+        <div class="task-count" data-count-for="${t.Id}"></div>
+        <div class="task-entry">${control}</div>
+        <div class="task-feedback" data-feedback-for="${t.Id}" aria-live="polite"></div>
+      </div>`;
+  }
+
+  /* ---------- counts & my entries ---------- */
+
+  function renderCounts(){
+    const today = startOfToday();
+    const counts = {};
+    let meTotal = 0, teamTotal = 0;
+    recent.forEach(e => {
+      if(e[F.voided]) return;
+      if(new Date(e[F.loggedAt]) < today) return;
+      const c = counts[e[F.activityTypeId]] || (counts[e[F.activityTypeId]] = { me: 0, team: 0 });
+      c.team++; teamTotal++;
+      if(isMine(e)){ c.me++; meTotal++; }
+    });
+    document.querySelectorAll("[data-count-for]").forEach(el => {
+      const c = counts[el.dataset.countFor] || { me: 0, team: 0 };
+      el.innerHTML = `<span class="count-me${c.me ? " has" : ""}" title="Logged by you today">${c.me}</span>` +
+        `<span class="count-sep">/</span><span class="count-team" title="Logged by the team today">${c.team}</span>`;
+    });
+    const summary = document.getElementById("todaySummary");
+    if(summary){
+      summary.textContent = `You've logged ${plural(meTotal, "item")} today. Team total: ${teamTotal}.`;
+    }
+  }
+
+  function renderMine(){
+    const wrap = document.getElementById("myRecent");
+    if(!wrap) return;
+    const mine = recent.filter(isMine)
+      .sort((a, b) => new Date(b[F.loggedAt]) - new Date(a[F.loggedAt]))
+      .slice(0, 60);
+    if(!mine.length){
+      wrap.innerHTML = `<p class="muted small">Nothing logged in the last ${CONFIG.recentDays} days. Entries you log show up here so you can remove a mistake.</p>`;
+      return;
+    }
+    let lastDay = "";
+    wrap.innerHTML = mine.map(e => {
+      const day = formatDay(e[F.loggedAt]);
+      const header = day !== lastDay ? `<div class="mine-day">${escapeHtml(day)}</div>` : "";
+      lastDay = day;
+      const voided = !!e[F.voided];
+      return `${header}
+        <div class="mine-item${voided ? " voided" : ""}">
+          <div class="mine-text">
+            <div class="mine-name">${escapeHtml(e[F.activityName] || "")}</div>
+            <div class="mine-meta">${e[F.identifier] ? `<span class="mine-id">${escapeHtml(e[F.identifier])}</span> ` : ""}${formatTime(e[F.loggedAt])}</div>
+          </div>
+          ${voided
+            ? `<span class="mine-removed">Removed</span>`
+            : `<button type="button" class="link-btn mine-remove" data-entry-id="${e.Id}">Remove</button>`}
+        </div>`;
+    }).join("");
+    wrap.querySelectorAll(".mine-remove").forEach(btn => btn.addEventListener("click", () => {
+      const entry = recent.find(e => e.Id === Number(btn.dataset.entryId));
+      if(!entry) return;
+      const what = entry[F.identifier] ? `${entry[F.activityName]} for ${entry[F.identifier]}` : entry[F.activityName];
+      if(confirm(`Remove "${what}" from your log? It will no longer count in reports.`)) voidEntries([entry]);
+    }));
+  }
+
+  /* ---------- feedback area under each row ---------- */
+
+  function feedbackEl(typeId){ return document.querySelector(`[data-feedback-for="${typeId}"]`); }
+
+  function showFeedback(typeId, message, kind){
+    const el = feedbackEl(typeId);
+    if(!el) return;
+    el.className = `task-feedback show ${kind || ""}`;
+    el.textContent = message;
+  }
+
+  function clearFeedback(typeId, onlyErrors){
+    const el = feedbackEl(typeId);
+    if(!el) return;
+    if(onlyErrors && !el.classList.contains("error")) return;
+    el.className = "task-feedback";
+    el.innerHTML = "";
+  }
+
+  function setRowBusy(typeId, on){
+    const row = document.querySelector(`[data-row-for="${typeId}"]`);
+    if(!row) return;
+    row.classList.toggle("busy", on);
+    row.querySelectorAll("button, input").forEach(el => { el.disabled = on; });
+  }
+
+  function flashRow(typeId){
+    const row = document.querySelector(`[data-row-for="${typeId}"]`);
+    if(!row) return;
+    row.classList.remove("flash");
+    void row.offsetWidth;   // restart the animation
+    row.classList.add("flash");
+  }
+
+  /* ---------- submit ---------- */
+
+  function parseIds(raw){
+    return [...new Set(String(raw).split(/[\s,;]+/).map(s => s.trim()).filter(Boolean))];
+  }
+
+  async function submit(typeId){
+    if(busy.has(typeId)) return;
+    const type = allTypes.find(t => t.Id === typeId);
+    if(!type) return;
+    const mode = inputMode(type);
+    const input = document.querySelector(`.task-input[data-type-id="${typeId}"]`);
+
+    let ids = [""];
+    if(mode !== "click"){
+      ids = parseIds(input.value);
+      if(!ids.length){
+        showFeedback(typeId, `Enter ${inputLabel(type)} first.`, "error");
+        input.focus();
+        return;
+      }
+      if(mode === "employee"){
+        const bad = ids.filter(x => !/^\d+$/.test(x));
+        if(bad.length){
+          showFeedback(typeId, `Employee numbers are digits only. Check: ${bad.join(", ")}`, "error");
+          input.focus();
+          return;
+        }
+      }
+      if(ids.length > CONFIG.maxBatch){
+        showFeedback(typeId, `That's ${ids.length} entries. Log up to ${CONFIG.maxBatch} at a time.`, "error");
+        return;
+      }
+    }
+
+    busy.add(typeId);
+    setRowBusy(typeId, true);
+    clearFeedback(typeId);
+    let keepFocus = true;
+    try{
+      let clean = ids;
+      let dupes = [];
+      if(mode !== "click"){
+        const found = await findDuplicates(type, ids);
+        dupes = ids.filter(x => found.has(x)).map(x => ({ idf: x, prior: found.get(x) }));
+        clean = ids.filter(x => !found.has(x));
+      }
+
+      const { created, failed } = await createEntries(type, clean);
+      if(input) input.value = failed.map(f => f.idf).join(" ");
+
+      if(created.length) announceLogged(type, created);
+      if(failed.length){
+        showFeedback(typeId,
+          `${plural(failed.length, "entry", "entries")} didn't save (${failed[0].err.message}). They're still in the box — press Log to try again.`,
+          "error");
+      } else if(dupes.length){
+        showDuplicatePrompt(type, dupes);
+        keepFocus = false;
+      }
+    }catch(err){
+      console.error(err);
+      showFeedback(typeId, `Not logged: ${err.message}`, "error");
+    }finally{
+      busy.delete(typeId);
+      setRowBusy(typeId, false);
+      if(keepFocus && input) input.focus();
+    }
+  }
+
+  /* Returns Map(identifier -> most recent matching entry) within the type's window. */
+  async function findDuplicates(type, ids){
+    const found = new Map();
+    const days = windowDays(type);
+    if(days <= 0) return found;
+    const since = addDays(new Date(), -days);
+
+    const results = await Promise.all(ids.map(async idf => {
+      try{
+        // Identifier first: it's the most selective indexed column (keeps us under the 5,000-item threshold)
+        const expr = `${F.identifier} eq ${odataString(idf)} and ${F.activityTypeId} eq ${type.Id} and ${F.loggedAt} ge ${odataDate(since)}`;
+        const items = await spGetAll(CONFIG.lists.activityLog, filterQuery(expr, "$top=50"));
+        return [idf, items.filter(i => !i[F.voided])];
+      }catch(err){
+        console.warn("Duplicate check used local data instead of SharePoint:", err);
+        return [idf, recent.filter(i =>
+          i[F.activityTypeId] === type.Id && i[F.identifier] === idf &&
+          !i[F.voided] && new Date(i[F.loggedAt]) >= since)];
+      }
+    }));
+
+    results.forEach(([idf, items]) => {
+      if(!items.length) return;
+      items.sort((a, b) => new Date(b[F.loggedAt]) - new Date(a[F.loggedAt]));
+      found.set(idf, items[0]);
+    });
+    return found;
+  }
+
+  async function createEntries(type, ids){
+    const created = [];
+    const failed = [];
+    const now = new Date().toISOString();
+    const chunkSize = 5;
+    for(let i = 0; i < ids.length; i += chunkSize){
+      const chunk = ids.slice(i, i + chunkSize);
+      await Promise.all(chunk.map(async idf => {
+        try{
+          const item = await spCreate(CONFIG.lists.activityLog, {
+            [F.title]: idf || type.Title,
+            [F.activityTypeId]: type.Id,
+            [F.activityName]: type.Title,
+            [F.category]: type[T.category] || "",
+            [F.identifier]: idf,
+            [F.staffName]: App.user.name,
+            [F.staffEmail]: App.user.username,
+            [F.loggedAt]: now,
+            [F.voided]: false
+          });
+          created.push(item);
+          recent.unshift(item);
+        }catch(err){
+          console.error("Activity entry failed to save:", err);
+          failed.push({ idf, err });
+        }
+      }));
+    }
+    return { created, failed };
+  }
+
+  function announceLogged(type, created){
+    flashRow(type.Id);
+    renderCounts();
+    renderMine();
+    const ids = created.map(c => c[F.identifier]).filter(Boolean);
+    let msg = `Logged "${type.Title}"`;
+    if(ids.length === 1) msg += ` for ${ids[0]}`;
+    else if(ids.length > 1) msg += ` for ${ids.length} entries`;
+    toast(`${msg}.`, {
+      type: "success",
+      actionLabel: "Undo",
+      onAction: () => voidEntries(created),
+      duration: CONFIG.undoSeconds * 1000
+    });
+  }
+
+  function showDuplicatePrompt(type, dupes){
+    const el = feedbackEl(type.Id);
+    if(!el) return;
+    const days = windowDays(type);
+    el.className = "task-feedback show warn";
+    el.innerHTML = `
+      <div class="dupe-text">
+        ${dupes.length === 1 ? "This was" : "These were"} already logged for this activity in the last ${plural(days, "day")}:
+        <ul>${dupes.map(d => `<li><strong>${escapeHtml(d.idf)}</strong> by ${
+          isMine(d.prior) ? "you" : escapeHtml(d.prior[F.staffName] || "someone")} on ${formatDate(d.prior[F.loggedAt])}</li>`).join("")}</ul>
+      </div>
+      <div class="dupe-actions">
+        <button type="button" class="btn btn-sm btn-navy" data-act="again">Log again anyway</button>
+        <button type="button" class="btn btn-sm btn-ghost" data-act="skip">Skip</button>
+      </div>`;
+    el.querySelector('[data-act="skip"]').addEventListener("click", () => {
+      clearFeedback(type.Id);
+      const input = document.querySelector(`.task-input[data-type-id="${type.Id}"]`);
+      if(input) input.focus();
+    });
+    const againBtn = el.querySelector('[data-act="again"]');
+    againBtn.addEventListener("click", async () => {
+      againBtn.disabled = true;
+      setRowBusy(type.Id, true);
+      try{
+        const { created, failed } = await createEntries(type, dupes.map(d => d.idf));
+        clearFeedback(type.Id);
+        if(created.length) announceLogged(type, created);
+        if(failed.length) showFeedback(type.Id, `${plural(failed.length, "entry", "entries")} didn't save: ${failed[0].err.message}`, "error");
+      }finally{
+        setRowBusy(type.Id, false);
+        const input = document.querySelector(`.task-input[data-type-id="${type.Id}"]`);
+        if(input) input.focus();
+      }
+    });
+    againBtn.focus();
+  }
+
+  /* ---------- remove (void) ---------- */
+
+  async function voidEntries(entries){
+    const now = new Date().toISOString();
+    let ok = 0;
+    for(const e of entries){
+      try{
+        await spUpdate(CONFIG.lists.activityLog, e.Id, {
+          [F.voided]: true,
+          [F.voidedBy]: App.user.name,
+          [F.voidedOn]: now
+        });
+        [e, recent.find(r => r.Id === e.Id)].forEach(x => {
+          if(x){ x[F.voided] = true; x[F.voidedBy] = App.user.name; x[F.voidedOn] = now; }
+        });
+        ok++;
+      }catch(err){
+        console.error("Couldn't remove entry", e.Id, err);
+      }
+    }
+    renderCounts();
+    renderMine();
+    if(ok === entries.length){
+      toast(ok === 1 ? "Entry removed." : `${ok} entries removed.`, { type: "info" });
+    }else{
+      toast(`Removed ${ok} of ${entries.length}. The rest couldn't be removed; check your connection and try again from Your recent entries.`,
+        { type: "error", duration: 0 });
+    }
+    return ok;
+  }
+
+  return {
+    init, refresh, reloadTypes, voidEntries,
+    inputMode, inputLabel, windowDays, groupByCategory, sortedTypes,
+    get types(){ return allTypes; }
+  };
+})();
