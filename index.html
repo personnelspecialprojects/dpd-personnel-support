@@ -373,6 +373,7 @@
           <option value="Employee Number">An employee number</option>
           <option value="Reference">A reference (letters allowed)</option>
           <option value="Click Only">Nothing, just click the button</option>
+          <option value="Count">How many they completed (a count, e.g. 115)</option>
         </select>
       </div>
       <div class="field-row" id="atInputLabelRow">
@@ -397,7 +398,7 @@
         <label for="atDescription">Helper text</label>
         <input type="text" id="atDescription" placeholder="Optional, one short line shown under the name">
       </div>
-      <div class="field-row">
+      <div class="field-row" id="atChecklistRow">
         <label>Checklist</label>
         <div>
           <div class="hint" style="margin-top:7px;">Optional. Leave empty for one-step logging. Add steps for work that runs over days or weeks: the board button becomes <strong>Start</strong>, and each item gets its own copy of these steps, which can be edited on that item.</div>
