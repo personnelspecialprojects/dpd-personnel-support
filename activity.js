@@ -53,12 +53,20 @@ const Activity = (() => {
     const v = String(t[T.inputType] || "Employee Number").toLowerCase();
     if(v.startsWith("click")) return "click";
     if(v.startsWith("ref")) return "reference";
+    if(v.startsWith("count")) return "count";
     return "employee";
+  }
+
+  /* How many items an entry represents. Entries without a Quantity count as 1. */
+  function qty(e){
+    const n = Number(e && e[F.quantity]);
+    return Number.isFinite(n) && n > 0 ? n : 1;
   }
 
   function inputLabel(t){
     if(t[T.inputLabel]) return t[T.inputLabel];
-    return inputMode(t) === "employee" ? "Employee #" : "Reference";
+    const mode = inputMode(t);
+    return mode === "employee" ? "Employee #" : mode === "count" ? "How many?" : "Reference";
   }
 
   /* Checklist template on an activity type. Stored as JSON [{text, external}], but a
@@ -80,7 +88,7 @@ const Activity = (() => {
     });
   }
 
-  function hasChecklist(t){ return templateSteps(t).length > 0; }
+  function hasChecklist(t){ return inputMode(t) !== "count" && templateSteps(t).length > 0; }
 
   function windowDays(t){
     const v = t[T.duplicateWindowDays];
@@ -190,6 +198,10 @@ const Activity = (() => {
              <button type="button" class="btn btn-navy task-log" data-type-id="${t.Id}">Start</button>`)
       : mode === "click"
       ? `<button type="button" class="btn btn-navy task-log task-log-wide" data-type-id="${t.Id}">Log one</button>`
+      : mode === "count"
+      ? `<input class="task-input task-input-count" data-type-id="${t.Id}" type="text" inputmode="numeric" autocomplete="off"
+            placeholder="${escapeHtml(label)}" aria-label="${escapeHtml(`${t.Title}: ${label}`)}">
+         <button type="button" class="btn btn-navy task-log" data-type-id="${t.Id}">Log</button>`
       : `<input class="task-input" data-type-id="${t.Id}" type="text" autocomplete="off" spellcheck="false"
             ${mode === "employee" ? 'inputmode="numeric"' : ""}
             placeholder="${escapeHtml(label)}" aria-label="${escapeHtml(`${t.Title}: ${label}`)}">
@@ -217,8 +229,9 @@ const Activity = (() => {
       if(e[F.voided]) return;
       if(new Date(e[F.loggedAt]) < today) return;
       const c = counts[e[F.activityTypeId]] || (counts[e[F.activityTypeId]] = { me: 0, team: 0 });
-      c.team++; teamTotal++;
-      if(isMine(e)){ c.me++; meTotal++; }
+      const n = qty(e);
+      c.team += n; teamTotal += n;
+      if(isMine(e)){ c.me += n; meTotal += n; }
     });
     document.querySelectorAll("[data-count-for]").forEach(el => {
       const c = counts[el.dataset.countFor] || { me: 0, team: 0 };
@@ -260,7 +273,7 @@ const Activity = (() => {
         <div class="mine-item${voided ? " voided" : ""}">
           <div class="mine-text">
             <div class="mine-name">${escapeHtml(e[F.activityName] || "")}</div>
-            <div class="mine-meta">${e[F.identifier] ? `<span class="mine-id">${escapeHtml(e[F.identifier])}</span> ` : ""}${formatTime(e[F.loggedAt])}</div>
+            <div class="mine-meta">${qty(e) > 1 || e[F.quantity] ? `<span class="mine-id">${qty(e).toLocaleString()} items</span> ` : ""}${e[F.identifier] ? `<span class="mine-id">${escapeHtml(e[F.identifier])}</span> ` : ""}${formatTime(e[F.loggedAt])}</div>
           </div>
           ${voided
             ? `<span class="mine-removed">Removed</span>`
@@ -330,6 +343,10 @@ const Activity = (() => {
       await startChecklist(type, input, false);
       return;
     }
+    if(mode === "count"){
+      await submitCount(type, input);
+      return;
+    }
 
     let ids = [""];
     if(mode !== "click"){
@@ -388,6 +405,66 @@ const Activity = (() => {
       busy.delete(typeId);
       setRowBusy(typeId, false);
       if(keepFocus && input) input.focus();
+    }
+  }
+
+  /* ---------- count activities: one entry worth N items ---------- */
+
+  async function submitCount(type, input){
+    const raw = input.value.trim().replace(/,/g, "");
+    if(!raw){
+      showFeedback(type.Id, "Enter how many you completed.", "error");
+      input.focus();
+      return;
+    }
+    if(!/^\d+$/.test(raw) || Number(raw) < 1){
+      showFeedback(type.Id, "Enter a whole number, like 50 or 115.", "error");
+      input.focus();
+      return;
+    }
+    const n = Number(raw);
+    if(n > CONFIG.maxCount){
+      showFeedback(type.Id, `That's more than ${CONFIG.maxCount.toLocaleString()} in one entry. Check the number, or log it in parts.`, "error");
+      return;
+    }
+    if(busy.has(type.Id)) return;
+    busy.add(type.Id);
+    setRowBusy(type.Id, true);
+    clearFeedback(type.Id);
+    try{
+      const item = await spCreate(CONFIG.lists.activityLog, {
+        [F.title]: `${n} × ${type.Title}`.slice(0, 255),
+        [F.activityTypeId]: type.Id,
+        [F.activityName]: type.Title,
+        [F.category]: type[T.category] || "",
+        [F.identifier]: "",
+        [F.quantity]: n,
+        [F.staffName]: App.user.name,
+        [F.staffEmail]: App.user.username,
+        [F.loggedAt]: new Date().toISOString(),
+        [F.voided]: false
+      });
+      recent.unshift(item);
+      input.value = "";
+      flashRow(type.Id);
+      renderCounts();
+      renderMine();
+      toast(`Logged ${n.toLocaleString()} for "${type.Title}".`, {
+        type: "success",
+        actionLabel: "Undo",
+        onAction: () => voidEntries([item]),
+        duration: CONFIG.undoSeconds * 1000
+      });
+      audit(AUDIT_AREAS.activity, `Logged "${type.Title}": ${n.toLocaleString()} completed`, {
+        recordId: item.Id, details: `Activity Log entry #${item.Id}, quantity ${n}`
+      });
+    }catch(err){
+      console.error(err);
+      showFeedback(type.Id, `Not logged: ${err.message}. The number is still in the box; press Log to try again.`, "error");
+    }finally{
+      busy.delete(type.Id);
+      setRowBusy(type.Id, false);
+      input.focus();
     }
   }
 
@@ -654,7 +731,8 @@ const Activity = (() => {
     if(removed.length){
       const names = [...new Set(removed.map(e => e[F.activityName]))].join(", ");
       const ids = idList(removed);
-      audit(AUDIT_AREAS.activity, `Removed ${removed.length === 1 ? "entry" : `${removed.length} entries`}: "${names}"${ids ? ` for ${ids}` : ""}`, {
+      const counted = removed.some(e => e[F.quantity]) ? ` (${removed.reduce((a, e) => a + qty(e), 0).toLocaleString()} items)` : "";
+      audit(AUDIT_AREAS.activity, `Removed ${removed.length === 1 ? "entry" : `${removed.length} entries`}: "${names}"${ids ? ` for ${ids}` : ""}${counted}`, {
         recordId: removed.length === 1 ? removed[0].Id : undefined,
         details: `Activity Log entries: ${removed.map(e => "#" + e.Id).join(", ")}; originally logged ${removed.map(e => formatDate(e[F.loggedAt])).join(", ")}`
       });
@@ -670,7 +748,7 @@ const Activity = (() => {
 
   return {
     init, refresh, reloadTypes, voidEntries, renderCounts, ingest, markVoided,
-    inputMode, inputLabel, windowDays, groupByCategory, sortedTypes, templateSteps, hasChecklist,
+    inputMode, inputLabel, windowDays, groupByCategory, sortedTypes, templateSteps, hasChecklist, qty,
     get types(){ return allTypes; }
   };
 })();
