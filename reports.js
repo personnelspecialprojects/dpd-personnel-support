@@ -134,6 +134,11 @@ const Reports = (() => {
     const fromLabel = range.from.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
     const open = Tickets.all.filter(t => ["New", "In Progress"].includes(Tickets.statusOf(t))).length;
+    const noAction = Tickets.all.filter(t => {
+      if(Tickets.statusOf(t) !== NO_ACTION_STATUS || !t[R.completedOn]) return false;
+      const d = new Date(t[R.completedOn]);
+      return d >= range.from && d < range.to;
+    }).length;
     const days = resolved
       .filter(t => t[R.receivedOn])
       .map(t => (new Date(t[R.completedOn]) - new Date(t[R.receivedOn])) / 86400000);
@@ -142,7 +147,8 @@ const Reports = (() => {
     document.getElementById("rpSummary").innerHTML =
       `<strong>${entries.length}</strong> ${entries.length === 1 ? "activity" : "activities"} logged and ` +
       `<strong>${resolved.length}</strong> ${resolved.length === 1 ? "inquiry" : "inquiries"} resolved, ` +
-      `${fromLabel} to ${toLabel}. ` +
+      `${fromLabel} to ${toLabel}` +
+      `${noAction ? ` (plus ${noAction} no-action ${noAction === 1 ? "email" : "emails"} closed without a response)` : ""}. ` +
       `${avg !== null ? `Inquiries took ${avg} days on average to resolve. ` : ""}` +
       `${plural(open, "inquiry", "inquiries")} open right now` +
       `${typeof Work !== "undefined" ? `, and ${plural(Work.all.filter(Work.isOpen).length, "checklist item")} in progress` : ""}.` +
