@@ -15,7 +15,7 @@ const CONFIG = {
     activityTypes: "Activity Types",
     activityLog: "Activity Log",
     requests: "Requests",
-    requestAudit: "Request Audit Log",
+    audit: "Audit Log",               // formerly "Request Audit Log" — rename the list in SharePoint
     alertRules: "Alert Rules",
     team: "Team Members",
     workItems: "Work Items",
@@ -28,7 +28,8 @@ const CONFIG = {
   defaultDuplicateWindowDays: 30,   // used when an activity type leaves the window blank
   maxBatch: 50,                     // most IDs accepted in one submission
   undoSeconds: 10,                  // how long the Undo button stays on the confirmation
-  closedWorkDays: 30                // how long completed/cancelled work items stay in the Tracked work tab
+  closedWorkDays: 30,               // how long completed/cancelled work items stay in the Tracked work tab
+  auditDefaultDays: 30              // Audit log tab's default time period
 };
 
 /* Activity Types list — the task menu, managed from the Admin tab */
@@ -66,13 +67,13 @@ const REQ_FIELDS = {
   title: "Title",
   email: "Email",
   problem: "Problem",
-  customerNote: "CustomerNote",
+  customerNote: "CustomerNote",           // no longer used (replies are sent from Outlook); kept for old records
   internalNotes: "InternalNotes",
   completed: "Completed",
   completedOn: "CompletedOn",
   completedBy: "CompletedBy",
   status: "Status",
-  customerNotified: "CustomerNotified",
+  customerNotified: "CustomerNotified",   // no longer used
   receivedOn: "ReceivedOn",
   entryType: "EntryType",
   source: "Source",
@@ -80,7 +81,12 @@ const REQ_FIELDS = {
   phoneNumber: "PhoneNumber"
 };
 
+/* Audit Log list — app-wide record of everything people do in the portal */
 const AUDIT_FIELDS = {
+  area: "Area",                 // Single line — Inquiry, Activity, Tracked work, Admin, Access, Data access
+  recordId: "RecordId",         // Number — Id of the inquiry / activity entry / work item / activity type
+  details: "Details",           // Multiple lines (plain) — extra context
+  staffEmail: "StaffEmail",     // Single line
   ticketId: "TicketId",
   staffMember: "StaffMember",
   logTime: "LogTime",
@@ -138,6 +144,15 @@ const WORKLOG_FIELDS = {
    Must match the choice added to the Requests list's Status column exactly.
    Senders are asked to put this phrase in the subject line. */
 const NO_ACTION_STATUS = "No Action Required";
+
+const AUDIT_AREAS = {
+  inquiry: "Inquiry",
+  activity: "Activity",
+  work: "Tracked work",
+  admin: "Admin",
+  access: "Access",
+  data: "Data access"
+};
 
 const PRESET_COLORS = [
   { name: "Yellow", hex: "#F5C518" },
