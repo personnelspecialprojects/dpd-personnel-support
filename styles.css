@@ -111,7 +111,7 @@ textarea{ min-height:70px; resize:vertical; width:100%; }
 .stack-label{ display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--muted); font-weight:600; }
 
 /* ---------- layout ---------- */
-main{ max-width:1400px; margin:0 auto; padding:16px 24px 64px; }
+main{ max-width:1680px; margin:0 auto; padding:16px 24px 40px; }
 .tabs{ display:flex; gap:2px; margin-bottom:18px; border-bottom:2px solid var(--line); overflow-x:auto; }
 .tab{
   background:none; border:none; font:inherit; font-size:14px; font-weight:600;
@@ -151,15 +151,11 @@ main{ max-width:1400px; margin:0 auto; padding:16px 24px 64px; }
 .table-scroll{ overflow-x:auto; }
 
 /* ---------- activity board (the ledger) ---------- */
-.log-layout{ display:grid; grid-template-columns:minmax(0, 1fr) 300px; gap:22px; align-items:start; }
-.board-wrap{ background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:18px 0 6px; }
-.board-head{ display:flex; justify-content:space-between; align-items:baseline; gap:12px; flex-wrap:wrap; padding:0 20px; }
-.board-head p{ margin:0; font-size:13px; }
-.how{ padding:4px 20px 12px; margin:0; font-size:13px; color:var(--muted); border-bottom:1px solid var(--line); }
+.how{ margin:0; font-size:13px; color:var(--muted); border-bottom:1px solid var(--line); }
 
 .board-colhead, .task-row{
   display:grid;
-  grid-template-columns:minmax(0, 1fr) 110px minmax(230px, 300px);
+  grid-template-columns:minmax(0, 1fr) 76px minmax(210px, 270px);
   column-gap:16px;
   align-items:center;
 }
@@ -218,11 +214,51 @@ main{ max-width:1400px; margin:0 auto; padding:16px 24px 64px; }
 .task-feedback ul{ margin:4px 0 0; padding-left:18px; }
 .dupe-actions{ display:flex; gap:8px; }
 
-/* ---------- my recent entries ---------- */
-.mine{
-  background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
-  padding:16px 16px 8px; position:sticky; top:12px; max-height:calc(100vh - 40px); overflow-y:auto;
+/* ---------- dashboard: inquiries | activity ---------- */
+.dash{
+  display:grid;
+  grid-template-columns:minmax(0, 1.15fr) minmax(460px, 1fr);
+  gap:18px;
+  align-items:stretch;
 }
+.dash-panel{
+  display:flex; flex-direction:column; min-width:0;
+  background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
+  height:calc(100vh - 150px); min-height:520px;
+  overflow:hidden;
+}
+.dash-head{
+  display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;
+  padding:14px 18px 10px;
+}
+.dash-title{ display:flex; align-items:baseline; gap:10px; }
+.head-count{ font-size:13px; font-weight:600; color:var(--red); }
+.dash-tools{
+  display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+  padding:0 18px 12px; border-bottom:1px solid var(--line);
+}
+.dash-tools input[type="text"]{ flex:1; min-width:160px; }
+.dash-scroll{ flex:1; overflow-y:auto; min-height:0; }
+.dash-panel .how{ padding:0 18px 12px; }
+.dash-panel .board-colhead, .dash-panel .task-row{ padding-left:18px; padding-right:18px; }
+.dash-panel .group-name{ padding-left:18px; padding-right:18px; }
+.dash-panel .board-colhead{ position:sticky; top:0; background:var(--card); z-index:1; }
+
+/* compact inquiry table inside the panel */
+table.inq{ border:none; border-radius:0; }
+table.inq thead th{ position:sticky; top:0; z-index:1; }
+table.inq td{ vertical-align:middle; padding-top:9px; padding-bottom:9px; }
+.inq-title{ font-weight:600; line-height:1.3; overflow-wrap:anywhere; }
+.dash-panel .empty-block{ border:none; }
+
+/* "Your recent entries" — collapsible, under the board */
+.mine{ margin:6px 18px 18px; border:1px solid var(--line-soft); border-radius:var(--radius-sm); }
+.mine summary{
+  cursor:pointer; padding:10px 12px; font-weight:600; font-size:13px; color:var(--navy-2);
+  list-style-position:inside;
+}
+.mine[open] summary{ border-bottom:1px solid var(--line-soft); }
+#myRecent{ padding:4px 12px 10px; max-height:320px; overflow-y:auto; }
 .mine-day{ font-size:12px; font-weight:700; color:var(--muted); margin:10px 0 4px; }
 .mine-day:first-child{ margin-top:4px; }
 .mine-item{
@@ -234,6 +270,34 @@ main{ max-width:1400px; margin:0 auto; padding:16px 24px 64px; }
 .mine-id{ font-variant-numeric:tabular-nums; color:var(--text); }
 .mine-item.voided .mine-name, .mine-item.voided .mine-meta{ text-decoration:line-through; color:#9AA1AD; }
 .mine-removed{ font-size:12px; color:#9AA1AD; }
+
+/* ---------- audit log ---------- */
+.area-tag{ display:inline-block; font-size:11.5px; font-weight:600; padding:1px 8px; border-radius:10px; background:#EEF2FA; color:var(--navy-2); }
+.audit-details{ white-space:pre-wrap; margin-top:3px; }
+
+/* ---------- setup check ---------- */
+.check-summary{
+  display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;
+  padding:10px 14px; border-radius:var(--radius-sm); margin:6px 0 12px;
+}
+.check-summary.good{ background:var(--ok-wash); color:var(--ok); }
+.check-summary.warn{ background:var(--warn-wash); color:#5C3F00; }
+.check-summary.bad{ background:#FDECEA; color:#8E2A1F; }
+.check-list{ border:1px solid var(--line-soft); border-radius:var(--radius-sm); padding:9px 12px; margin-bottom:8px; }
+.check-head{ display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
+.check-count{ margin-left:auto; }
+.check-icon{
+  display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px;
+  border-radius:50%; font-size:11px; font-weight:800; color:#fff; flex-shrink:0; transform:translateY(2px);
+}
+.check-list.good .check-icon{ background:var(--ok); }
+.check-list.warn .check-icon{ background:#C08A00; }
+.check-list.bad .check-icon{ background:var(--red); }
+.check-list ul{ margin:6px 0 2px; padding-left:26px; font-size:13px; }
+.check-list li{ margin-bottom:4px; }
+.check-list li.bad::marker{ color:var(--red); }
+.check-list li.warn::marker{ color:#C08A00; }
+.check-copy-fallback{ width:100%; min-height:160px; margin-top:10px; font-family:Consolas, monospace; font-size:12px; }
 
 /* ---------- tables ---------- */
 table{ width:100%; border-collapse:collapse; background:var(--card); }
@@ -431,9 +495,13 @@ td.quick{ text-align:right; width:1%; vertical-align:middle; }
 }
 
 /* ---------- responsive ---------- */
-@media (max-width: 1000px){
-  .log-layout{ grid-template-columns:1fr; }
-  .mine{ position:static; max-height:none; }
+/* Narrower screens: stack the panels (inquiries first) and let the page scroll. */
+@media (max-width: 1150px){
+  .dash{ grid-template-columns:1fr; }
+  .dash-panel{ height:auto; min-height:0; overflow:visible; }
+  .dash-scroll{ overflow:visible; }
+  table.inq thead th, .dash-panel .board-colhead{ position:static; }
+  .dash-panel:first-child .dash-scroll{ max-height:60vh; overflow-y:auto; }
 }
 @media (max-width: 640px){
   main{ padding:12px 12px 64px; }
