@@ -35,7 +35,8 @@ const SetupCheck = (() => {
       { list: CONFIG.lists.activityLog, purpose: "every logged activity", fields: [
         [F.activityTypeId, "Number", { index: true }], [F.activityName, "Text"], [F.category, "Text"],
         [F.identifier, "Text", { index: true }], [F.staffName, "Text"], [F.staffEmail, "Text", { index: true }],
-        [F.loggedAt, "DateTime", { index: true, time: true }], [F.voided, "Boolean"], [F.voidedBy, "Text"],
+        [F.loggedAt, "DateTime", { index: true, time: true }], [F.quantity, "Number"],
+        [F.voided, "Boolean"], [F.voidedBy, "Text"],
         [F.voidedOn, "DateTime", { time: true }]
       ]},
       { list: CONFIG.lists.requests, purpose: "inquiries", fields: [
