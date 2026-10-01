@@ -37,7 +37,7 @@ const Work = (() => {
     await load();
     render();
     Activity.renderCounts();
-    ViewHooks.workView = render;
+    onView("workView", render);
   }
 
   async function refresh(){
@@ -220,7 +220,7 @@ const Work = (() => {
     const empty = document.getElementById("workEmpty");
     empty.hidden = list.length > 0;
     empty.innerHTML = {
-      mine: "<p>Nothing is assigned to you right now.</p><p class=\"small\">Checklist activities on the Log activity tab have a <strong>Start</strong> button. Items you start, or steps handed to you, show up here.</p>",
+      mine: "<p>Nothing is assigned to you right now.</p><p class=\"small\">Checklist activities on the Dashboard have a <strong>Start</strong> button. Items you start, or steps handed to you, show up here.</p>",
       open: "<p>No checklist items are in progress.</p>",
       waiting: "<p>Nothing is waiting on another office.</p>",
       closed: `<p>Nothing was completed or cancelled in the last ${CONFIG.closedWorkDays} days.</p>`
@@ -306,6 +306,12 @@ const Work = (() => {
   }
 
   async function addLog(itemId, action){
+    // Mirror every item-history entry into the app-wide audit log.
+    const it = items.find(i => i.Id === itemId);
+    audit(AUDIT_AREAS.work, `${it ? (it[W.identifier] || it[W.title]) : `Item #${itemId}`}: ${action}`, {
+      recordId: itemId,
+      details: it ? `Activity: ${it[W.activityName] || ""}` : ""
+    });
     try{
       const row = await spCreate(CONFIG.lists.workItemLog, {
         [WL.title]: `Work item ${itemId}`,
@@ -558,13 +564,15 @@ const Work = (() => {
     if(act === "edit"){ editingStepId = stepId; renderModal(); return; }
     if(act === "cancel"){ editingStepId = null; renderModal(); return; }
     if(act === "up" || act === "down"){
+      let moved = "";
       await mutate(steps => {
         const i = steps.findIndex(x => x.id === stepId);
         if(i < 0) throw missingStep();
         const j = act === "up" ? i - 1 : i + 1;
         if(j < 0 || j >= steps.length) return;
+        moved = steps[i].text;
         [steps[i], steps[j]] = [steps[j], steps[i]];
-      }, null);
+      }, null).then(ok => { if(ok && moved) addLog(currentId, `Moved step ${act}: ${moved}`); });
       return;
     }
     if(act === "delete"){
