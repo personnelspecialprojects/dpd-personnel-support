@@ -16,7 +16,7 @@ const Reports = (() => {
 
   function init(){
     if(!wired) wire();
-    ViewHooks.reportsView = () => { if(!loadedOnce) run(); };
+    onView("reportsView", () => { if(!loadedOnce) run(); });
   }
 
   function wire(){
@@ -200,6 +200,7 @@ const Reports = (() => {
       rows.push([g.name, r.name, ...counts, counts.reduce((a, b) => a + b, 0)]);
     }));
     downloadCsv(`activity-summary_${rangeSlug()}.csv`, rows);
+    audit(AUDIT_AREAS.data, `Exported activity summary, ${rangeSlug().replace("_to_", " to ")}`);
   }
 
   function exportEntries(){
@@ -213,6 +214,7 @@ const Reports = (() => {
       formatDate(t[R.completedOn]), "Inquiries", `Inquiry resolved: ${t.Title || ""}`, t[R.email] || t[R.phoneNumber] || "", t[R.completedBy], ""
     ]));
     downloadCsv(`activity-entries_${rangeSlug()}.csv`, rows);
+    audit(AUDIT_AREAS.data, `Exported all activity entries (${plural(rows.length - 1, "row")}), ${rangeSlug().replace("_to_", " to ")}`);
   }
 
   /* ---------- lookup ---------- */
@@ -226,6 +228,7 @@ const Reports = (() => {
       const items = await spGetAll(CONFIG.lists.activityLog,
         filterQuery(`${F.identifier} eq ${odataString(value)}`, "$top=500"));
       items.sort((a, b) => new Date(b[F.loggedAt]) - new Date(a[F.loggedAt]));
+      audit(AUDIT_AREAS.data, `Looked up ${value} (${plural(items.length, "record")} found)`);
       if(!items.length){
         out.innerHTML = `<p class="muted">Nothing has been logged for <strong>${escapeHtml(value)}</strong>.</p>`;
         return;
