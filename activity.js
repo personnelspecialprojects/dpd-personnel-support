@@ -19,7 +19,7 @@ const Activity = (() => {
     buildBoard();
     renderCounts();
     renderMine();
-    ViewHooks.logView = () => { renderCounts(); renderMine(); };
+    onView("dashView", () => { renderCounts(); renderMine(); });
   }
 
   async function refresh(){
@@ -141,7 +141,7 @@ const Activity = (() => {
 
     board.innerHTML = `
       <div class="board-colhead" aria-hidden="true">
-        <span>Activity</span><span class="c-today">Today: you / team</span><span>Log it</span>
+        <span>Activity</span><span class="c-today" title="Logged today: by you / by the whole team">Today</span><span>Log it</span>
       </div>
       ${groupByCategory(types).map(g => `
         <section class="task-group">
@@ -369,7 +369,10 @@ const Activity = (() => {
       const { created, failed } = await createEntries(type, clean);
       if(input) input.value = failed.map(f => f.idf).join(" ");
 
-      if(created.length) announceLogged(type, created);
+      if(created.length){
+        announceLogged(type, created);
+        auditLogged(type, created);
+      }
       if(failed.length){
         showFeedback(typeId,
           `${plural(failed.length, "entry", "entries")} didn't save (${failed[0].err.message}). They're still in the box — press Log to try again.`,
@@ -591,7 +594,10 @@ const Activity = (() => {
       try{
         const { created, failed } = await createEntries(type, dupes.map(d => d.idf));
         clearFeedback(type.Id);
-        if(created.length) announceLogged(type, created);
+        if(created.length){
+          announceLogged(type, created);
+          auditLogged(type, created, dupes);
+        }
         if(failed.length) showFeedback(type.Id, `${plural(failed.length, "entry", "entries")} didn't save: ${failed[0].err.message}`, "error");
       }finally{
         setRowBusy(type.Id, false);
@@ -600,6 +606,26 @@ const Activity = (() => {
       }
     });
     againBtn.focus();
+  }
+
+  /* ---------- audit entries ---------- */
+
+  function idList(entries){
+    const ids = entries.map(e => e[F.identifier]).filter(Boolean);
+    return ids.length > 12 ? `${ids.slice(0, 12).join(", ")} and ${ids.length - 12} more` : ids.join(", ");
+  }
+
+  /* One audit row per submission (not per number), with every entry Id in Details. */
+  function auditLogged(type, created, overriddenDupes){
+    const ids = idList(created);
+    let action = `Logged "${type.Title}"${ids ? ` for ${ids}` : ""}`;
+    let details = `Activity Log entries: ${created.map(e => "#" + e.Id).join(", ")}`;
+    if(overriddenDupes && overriddenDupes.length){
+      action += " after a duplicate warning (logged again anyway)";
+      details += `\nPreviously logged: ` + overriddenDupes.map(d =>
+        `${d.idf} by ${d.prior[F.staffName] || "unknown"} on ${formatDate(d.prior[F.loggedAt])}`).join("; ");
+    }
+    audit(AUDIT_AREAS.activity, action, { recordId: created.length === 1 ? created[0].Id : undefined, details });
   }
 
   /* ---------- remove (void) ---------- */
@@ -624,6 +650,15 @@ const Activity = (() => {
     }
     renderCounts();
     renderMine();
+    const removed = entries.filter(e => e[F.voided]);
+    if(removed.length){
+      const names = [...new Set(removed.map(e => e[F.activityName]))].join(", ");
+      const ids = idList(removed);
+      audit(AUDIT_AREAS.activity, `Removed ${removed.length === 1 ? "entry" : `${removed.length} entries`}: "${names}"${ids ? ` for ${ids}` : ""}`, {
+        recordId: removed.length === 1 ? removed[0].Id : undefined,
+        details: `Activity Log entries: ${removed.map(e => "#" + e.Id).join(", ")}; originally logged ${removed.map(e => formatDate(e[F.loggedAt])).join(", ")}`
+      });
+    }
     if(ok === entries.length){
       toast(ok === 1 ? "Entry removed." : `${ok} entries removed.`, { type: "info" });
     }else{
