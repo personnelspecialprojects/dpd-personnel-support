@@ -27,6 +27,7 @@ const CONFIG = {
   recentDays: 14,                   // how far back the Log Activity tab loads
   defaultDuplicateWindowDays: 30,   // used when an activity type leaves the window blank
   maxBatch: 50,                     // most IDs accepted in one submission
+  maxCount: 10000,                  // largest number accepted for a "Count" activity in one entry
   undoSeconds: 10,                  // how long the Undo button stays on the confirmation
   closedWorkDays: 30,               // how long completed/cancelled work items stay in the Tracked work tab
   auditDefaultDays: 30              // Audit log tab's default time period
@@ -45,7 +46,7 @@ const TYPE_FIELDS = {
   checklistSteps: "ChecklistSteps"        // Multiple lines of text (plain). Empty = simple one-step logging.
 };
 
-const INPUT_TYPES = ["Employee Number", "Reference", "Click Only"];
+const INPUT_TYPES = ["Employee Number", "Reference", "Click Only", "Count"];
 
 /* Activity Log list — one row per completed task */
 const LOG_FIELDS = {
@@ -57,6 +58,7 @@ const LOG_FIELDS = {
   staffName: "StaffName",           // Single line
   staffEmail: "StaffEmail",         // Single line
   loggedAt: "LoggedAt",             // Date and time
+  quantity: "Quantity",             // Number — how many items this entry represents ("Count" activities). Blank = 1
   voided: "Voided",                 // Yes/No — Undo/Remove sets this; rows are never deleted
   voidedBy: "VoidedBy",             // Single line
   voidedOn: "VoidedOn"              // Date and time
