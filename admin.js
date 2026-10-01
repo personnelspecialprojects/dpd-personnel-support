@@ -14,7 +14,7 @@ const Admin = (() => {
   function init(){
     if(!App.isAdmin) return;
     if(!wired) wire();
-    ViewHooks.adminView = () => { renderTypes(); Tickets.renderRules(); renderTeam(); };
+    onView("adminView", () => { renderTypes(); Tickets.renderRules(); renderTeam(); });
   }
 
   function wire(){
@@ -39,7 +39,7 @@ const Admin = (() => {
     const showInactive = document.getElementById("showInactiveTypes").checked;
     const types = Activity.types.filter(t => showInactive || t[T.active] !== false);
     if(!types.length){
-      wrap.innerHTML = `<div class="empty-block"><p>No activities yet. Select <strong>Add activity</strong> to create the first one; it appears on everyone's Log activity tab right away.</p></div>`;
+      wrap.innerHTML = `<div class="empty-block"><p>No activities yet. Select <strong>Add activity</strong> to create the first one; it appears on everyone's Dashboard right away.</p></div>`;
       return;
     }
     const groups = Activity.groupByCategory(types);
@@ -153,13 +153,17 @@ const Admin = (() => {
     btn.disabled = true;
     msg.className = "save-msg";
     msg.textContent = "Saving...";
+    const wasEditing = editingId;
+    const before = wasEditing ? Activity.types.find(x => x.Id === wasEditing) : null;
     try{
-      if(editingId) await spUpdate(CONFIG.lists.activityTypes, editingId, body);
-      else await spCreate(CONFIG.lists.activityTypes, body);
+      let savedId = wasEditing;
+      if(wasEditing) await spUpdate(CONFIG.lists.activityTypes, wasEditing, body);
+      else savedId = (await spCreate(CONFIG.lists.activityTypes, body)).Id;
       await Activity.reloadTypes();
       renderTypes();
       closeTypeModal();
-      toast(editingId ? "Activity updated." : `"${name}" added to the board.`, { type: "success" });
+      auditTypeSave(before, body, savedId);
+      toast(wasEditing ? "Activity updated." : `"${name}" added to the board.`, { type: "success" });
     }catch(err){
       console.error(err);
       msg.className = "save-msg err";
@@ -208,6 +212,37 @@ const Admin = (() => {
     input.focus();
   }
 
+  /* Audit an activity create/edit, listing exactly what changed. */
+  function auditTypeSave(before, body, id){
+    const describeSteps = raw => {
+      const st = Activity.templateSteps({ [T.checklistSteps]: raw });
+      return st.length ? st.map((x, i) => `${i + 1}. ${x.text}${x.external ? " [other office]" : ""}`).join("\n") : "(none)";
+    };
+    const labels = {
+      Title: "name", [T.category]: "category", [T.inputType]: "staff enter", [T.inputLabel]: "box label",
+      [T.duplicateWindowDays]: "duplicate check days", [T.sortOrder]: "order", [T.description]: "helper text"
+    };
+    if(!before){
+      const steps = Activity.templateSteps(body).length;
+      audit(AUDIT_AREAS.admin, `Added activity "${body.Title}" (${body[T.category]}, ${body[T.inputType]}${steps ? `, checklist with ${plural(steps, "step")}` : ""})`, {
+        recordId: id, details: steps ? `Checklist:\n${describeSteps(body[T.checklistSteps])}` : ""
+      });
+      return;
+    }
+    const norm = v => (v === null || v === undefined) ? "" : String(v);
+    const changes = Object.keys(labels)
+      .filter(k => norm(before[k]) !== norm(body[k]))
+      .map(k => `${labels[k]}: "${norm(before[k])}" → "${norm(body[k])}"`);
+    const stepsChanged = norm(before[T.checklistSteps]) !== norm(body[T.checklistSteps]) &&
+      describeSteps(before[T.checklistSteps]) !== describeSteps(body[T.checklistSteps]);
+    if(stepsChanged) changes.push("checklist steps");
+    if(!changes.length) return;
+    audit(AUDIT_AREAS.admin, `Edited activity "${body.Title}": ${changes.join("; ")}`, {
+      recordId: id,
+      details: stepsChanged ? `Checklist before:\n${describeSteps(before[T.checklistSteps])}\n\nChecklist after:\n${describeSteps(body[T.checklistSteps])}` : ""
+    });
+  }
+
   async function toggleType(id){
     const t = Activity.types.find(x => x.Id === id);
     if(!t) return;
@@ -215,6 +250,7 @@ const Admin = (() => {
     if(turningOff && !confirm(`Turn off "${t.Title}"? It disappears from the board. Past entries stay in reports, and you can turn it back on any time.`)) return;
     try{
       await spUpdate(CONFIG.lists.activityTypes, id, { [T.active]: !turningOff });
+      audit(AUDIT_AREAS.admin, `${turningOff ? "Turned off" : "Turned on"} activity "${t.Title}"`, { recordId: id });
       await Activity.reloadTypes();
       renderTypes();
     }catch(err){
@@ -266,7 +302,8 @@ const Admin = (() => {
     btn.disabled = true;
     setStaffMsg("Adding...");
     try{
-      await spCreate(CONFIG.lists.team, { [M.title]: email, [M.role]: role });
+      const created = await spCreate(CONFIG.lists.team, { [M.title]: email, [M.role]: role });
+      audit(AUDIT_AREAS.admin, `Gave portal access to ${email} as ${role}`, { recordId: created.Id });
       input.value = "";
       setStaffMsg(`Added ${email}.`, "ok");
       await reloadTeam();
@@ -284,6 +321,7 @@ const Admin = (() => {
     const next = (m[M.role] || "Staff") === "Admin" ? "Staff" : "Admin";
     try{
       await spUpdate(CONFIG.lists.team, id, { [M.role]: next });
+      audit(AUDIT_AREAS.admin, `Changed ${m[M.title]} from ${m[M.role] || "Staff"} to ${next}`, { recordId: id });
       await reloadTeam();
     }catch(err){
       console.error(err);
@@ -296,6 +334,7 @@ const Admin = (() => {
     if(!confirm(`Remove ${m ? m[M.title] : "this person"} from the roster? They lose access right away. Their past entries stay in reports.`)) return;
     try{
       await spDelete(CONFIG.lists.team, id);
+      audit(AUDIT_AREAS.admin, `Removed portal access for ${m ? m[M.title] : `roster entry #${id}`}`, { recordId: id });
       await reloadTeam();
     }catch(err){
       console.error(err);
