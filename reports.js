@@ -98,15 +98,15 @@ const Reports = (() => {
     const staff = new Set();
     const cells = {};      // rowKey -> { staffName -> n }
     const names = {};      // typeId -> latest snapshot name/category
-    const bump = (row, person) => {
+    const bump = (row, person, n = 1) => {
       staff.add(person);
       const r = cells[row] || (cells[row] = {});
-      r[person] = (r[person] || 0) + 1;
+      r[person] = (r[person] || 0) + n;
     };
     entries.forEach(e => {
       const key = String(e[F.activityTypeId]);
       names[key] = names[key] || { name: e[F.activityName], category: e[F.category] };
-      bump(key, e[F.staffName] || "Unknown");
+      bump(key, e[F.staffName] || "Unknown", Activity.qty(e));   // Count activities add their number
     });
     resolved.forEach(t => bump(INQUIRY_KEY, t[R.completedBy] || "Unassigned"));
 
@@ -144,8 +144,9 @@ const Reports = (() => {
       .map(t => (new Date(t[R.completedOn]) - new Date(t[R.receivedOn])) / 86400000);
     const avg = days.length ? (days.reduce((a, b) => a + b, 0) / days.length).toFixed(1) : null;
 
+    const totalItems = entries.reduce((a, e) => a + Activity.qty(e), 0);
     document.getElementById("rpSummary").innerHTML =
-      `<strong>${entries.length}</strong> ${entries.length === 1 ? "activity" : "activities"} logged and ` +
+      `<strong>${totalItems.toLocaleString()}</strong> ${totalItems === 1 ? "item" : "items"} of work logged and ` +
       `<strong>${resolved.length}</strong> ${resolved.length === 1 ? "inquiry" : "inquiries"} resolved, ` +
       `${fromLabel} to ${toLabel}` +
       `${noAction ? ` (plus ${noAction} no-action ${noAction === 1 ? "email" : "emails"} closed without a response)` : ""}. ` +
@@ -205,13 +206,13 @@ const Reports = (() => {
 
   function exportEntries(){
     if(!range){ toast("Run a report first.", { type: "error" }); return; }
-    const rows = [["Logged At", "Category", "Activity", "Identifier", "Staff Member", "Staff Email"]];
+    const rows = [["Logged At", "Category", "Activity", "Identifier", "Quantity", "Staff Member", "Staff Email"]];
     entries
       .slice()
       .sort((a, b) => new Date(a[F.loggedAt]) - new Date(b[F.loggedAt]))
-      .forEach(e => rows.push([formatDate(e[F.loggedAt]), e[F.category], e[F.activityName], e[F.identifier], e[F.staffName], e[F.staffEmail]]));
+      .forEach(e => rows.push([formatDate(e[F.loggedAt]), e[F.category], e[F.activityName], e[F.identifier], Activity.qty(e), e[F.staffName], e[F.staffEmail]]));
     resolvedInRange().forEach(t => rows.push([
-      formatDate(t[R.completedOn]), "Inquiries", `Inquiry resolved: ${t.Title || ""}`, t[R.email] || t[R.phoneNumber] || "", t[R.completedBy], ""
+      formatDate(t[R.completedOn]), "Inquiries", `Inquiry resolved: ${t.Title || ""}`, t[R.email] || t[R.phoneNumber] || "", 1, t[R.completedBy], ""
     ]));
     downloadCsv(`activity-entries_${rangeSlug()}.csv`, rows);
     audit(AUDIT_AREAS.data, `Exported all activity entries (${plural(rows.length - 1, "row")}), ${rangeSlug().replace("_to_", " to ")}`);
