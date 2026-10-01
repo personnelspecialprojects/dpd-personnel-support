@@ -265,6 +265,15 @@ table.matrix tfoot th, table.matrix tfoot td{ font-weight:700; border-top:2px so
 .status-InProgress{ background:#FEF3C7; color:#92400E; }
 .status-Completed{ background:#DCFCE7; color:#166534; }
 .status-Merged{ background:#E5E7EB; color:#374151; }
+.status-NoActionRequired{ background:#EEF0F4; color:#5B6475; }
+.btn-noaction{
+  background:#fff; border:1px solid var(--line); color:var(--muted); border-radius:var(--radius-sm);
+  font:inherit; font-size:12px; font-weight:600; padding:4px 10px; cursor:pointer; white-space:nowrap;
+}
+.btn-noaction:hover:not(:disabled){ border-color:var(--navy-2); color:var(--navy); background:#F4F6FA; }
+.btn-noaction:disabled{ opacity:.5; cursor:progress; }
+td.quick{ text-align:right; width:1%; vertical-align:middle; }
+.visually-hidden{ position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
 
 /* ---------- admin bits ---------- */
 .list-item{ display:flex; align-items:center; gap:10px; padding:9px 0; border-bottom:1px solid var(--line-soft); font-size:13px; }
