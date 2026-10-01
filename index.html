@@ -94,9 +94,10 @@
         <option value="In Progress">In Progress</option>
         <option value="Completed">Completed</option>
         <option value="Merged">Merged</option>
+        <option value="No Action Required">No Action Required</option>
       </select>
       <input type="text" id="searchBox" placeholder="Search name, email, title, #" aria-label="Search inquiries">
-      <label class="check"><input type="checkbox" id="hideMergedCheckbox" checked> Hide merged</label>
+      <label class="check"><input type="checkbox" id="hideMergedCheckbox" checked> Hide merged and no-action</label>
       <div class="stat-pills" id="statPills"></div>
     </div>
     <div class="table-scroll">
@@ -108,7 +109,8 @@
             <th data-sort="Title">Title</th>
             <th data-sort="Email">Requestor</th>
             <th data-sort="Status">Status</th>
-            <th data-sort="CompletedBy">Completed by</th>
+            <th data-sort="CompletedBy">Closed by</th>
+            <th><span class="visually-hidden">Quick actions</span></th>
           </tr>
         </thead>
         <tbody id="ticketsBody"></tbody>
@@ -264,6 +266,7 @@
           <option value="In Progress">In Progress</option>
           <option value="Completed">Completed</option>
           <option value="Merged">Merged</option>
+          <option value="No Action Required">No Action Required</option>
         </select>
       </div>
       <div class="field-row" id="noNotifyRow" hidden>
@@ -290,6 +293,7 @@
       </div>
     </div>
     <div class="modal-footer">
+      <button type="button" class="btn btn-ghost" id="mNoActionBtn" title="Close without a response. No email is sent and it doesn't count as a resolved inquiry.">No Action Required</button>
       <div class="save-msg" id="saveMsg"></div>
       <button type="button" class="btn btn-ghost" id="cancelBtn">Cancel</button>
       <button type="button" class="btn btn-red" id="saveBtn">Save changes</button>
