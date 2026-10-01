@@ -201,6 +201,8 @@ main{ max-width:1680px; margin:0 auto; padding:16px 24px 40px; }
 }
 .task-input:focus{ border-color:var(--navy-2); outline:none; box-shadow:0 0 0 3px rgba(46,107,216,.15); }
 .task-log{ min-width:64px; }
+.task-input-count{ max-width:120px; text-align:right; }
+.task-input-count::placeholder{ text-align:left; }
 .task-log-wide{ flex:1; }
 
 .task-feedback{ grid-column:1 / -1; font-size:13px; }
