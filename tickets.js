@@ -79,6 +79,11 @@ const Tickets = (() => {
       p.hidden = !p.hidden;
     });
     on("mergeBtn", "click", mergeIntoTicket);
+    on("mNoActionBtn", "click", async () => {
+      const id = currentId;
+      closeModal();
+      await markNoAction(id);
+    });
     on("problemLockBtn", "click", () => problemUnlocked ? lockProblem() : unlockProblem());
 
     on("openManualEntryBtn", "click", openManualEntry);
@@ -175,7 +180,7 @@ const Tickets = (() => {
   function alertColor(t){
     if(!t[R.receivedOn]) return null;
     const s = statusOf(t);
-    if(s === "Completed" || s === "Merged") return null;
+    if(s === "Completed" || s === "Merged" || s === NO_ACTION_STATUS) return null;
     const start = new Date(t[R.receivedOn]);
     const now = new Date();
     let worst = null;
@@ -285,7 +290,7 @@ const Tickets = (() => {
     const hideMerged = document.getElementById("hideMergedCheckbox").checked;
     return tickets.filter(t => {
       const s = statusOf(t);
-      if(hideMerged && s === "Merged" && !status) return false;
+      if(hideMerged && (s === "Merged" || s === NO_ACTION_STATUS) && !status) return false;
       if(status && s !== status) return false;
       if(search){
         const hay = `${t.Title || ""} ${t[R.email] || ""} ${t[R.requesterName] || ""} ${formatTicketId(t.Id)}`.toLowerCase();
@@ -315,18 +320,28 @@ const Tickets = (() => {
         <td>${escapeHtml(t[R.requesterName] || t[R.email] || "")}</td>
         <td><span class="status-badge status-${s.replace(/\s/g, "")}">${escapeHtml(s)}</span></td>
         <td>${escapeHtml(t[R.completedBy] || "")}</td>
+        <td class="quick">${s === "New" || s === "In Progress"
+          ? `<button type="button" class="btn-noaction" data-noaction="${t.Id}" title="Close without a response. No email is sent and it doesn't count as a resolved inquiry.">No Action Required</button>`
+          : ""}</td>
       </tr>`;
     }).join("");
+    body.querySelectorAll("[data-noaction]").forEach(b => b.addEventListener("click", e => {
+      e.stopPropagation();          // don't open the ticket
+      b.disabled = true;
+      markNoAction(Number(b.dataset.noaction));
+    }));
+    body.querySelectorAll("[data-noaction]").forEach(b => b.addEventListener("keydown", e => e.stopPropagation()));
     body.querySelectorAll("tr").forEach(tr => {
       const open = () => openModal(Number(tr.dataset.ticketId));
       tr.addEventListener("click", open);
       tr.addEventListener("keydown", e => { if(e.key === "Enter") open(); });
     });
 
-    const counts = { New: 0, "In Progress": 0, Completed: 0, Merged: 0 };
+    const counts = { New: 0, "In Progress": 0, Completed: 0, Merged: 0, [NO_ACTION_STATUS]: 0 };
     tickets.forEach(t => { const s = statusOf(t); counts[s] = (counts[s] || 0) + 1; });
     document.getElementById("statPills").innerHTML =
-      ["New", "In Progress", "Completed", "Merged"].map(s => `<span class="pill"><b>${counts[s]}</b> ${s}</span>`).join("");
+      ["New", "In Progress", "Completed", "Merged", NO_ACTION_STATUS]
+        .map(s => `<span class="pill"><b>${counts[s]}</b> ${s === NO_ACTION_STATUS ? "No action" : s}</span>`).join("");
 
     const open = counts.New + counts["In Progress"];
     const badge = document.getElementById("openInquiryBadge");
@@ -362,6 +377,7 @@ const Tickets = (() => {
     $("mCustomer").value = original.customerNote;
     $("mNoNotify").checked = false;
     $("noNotifyRow").hidden = original.status !== "Completed";
+    $("mNoActionBtn").hidden = !(original.status === "New" || original.status === "In Progress");
     $("mergePanel").hidden = true;
     $("mergeSourceId").textContent = formatTicketId(id);
     populateMergeTargets(id);
@@ -405,7 +421,7 @@ const Tickets = (() => {
   function populateMergeTargets(excludeId){
     const sel = document.getElementById("mergeTargetSelect");
     sel.innerHTML = '<option value="">Select the original inquiry...</option>' +
-      tickets.filter(t => t.Id !== excludeId && statusOf(t) !== "Merged")
+      tickets.filter(t => t.Id !== excludeId && statusOf(t) !== "Merged" && statusOf(t) !== NO_ACTION_STATUS)
         .sort((a, b) => b.Id - a.Id)
         .map(t => `<option value="${t.Id}">#${formatTicketId(t.Id)} — ${escapeHtml(t.Title || "(no subject)")} — ${escapeHtml(t[R.email] || t[R.requesterName] || "")}</option>`)
         .join("");
@@ -429,8 +445,20 @@ const Tickets = (() => {
       [R.internalNotes]: newInternal,
       [R.customerNote]: newCustomer,
       [R.requesterName]: newName,
-      [R.completed]: newStatus === "Completed" || newStatus === "Merged"
+      [R.completed]: newStatus === "Completed" || newStatus === "Merged" || newStatus === NO_ACTION_STATUS
     };
+    // Choosing No Action Required from the dropdown behaves like the one-click button.
+    if(newStatus === NO_ACTION_STATUS && original.status !== NO_ACTION_STATUS){
+      body[R.completedOn] = new Date().toISOString();
+      body[R.completedBy] = App.user.name;
+      body[R.customerNotified] = true;   // never send the completion email
+    }
+    // Reopening a no-action inquiry clears its closure so a later Completed still emails the customer.
+    if(original.status === NO_ACTION_STATUS && (newStatus === "New" || newStatus === "In Progress")){
+      body[R.completedOn] = null;
+      body[R.completedBy] = "";
+      body[R.customerNotified] = false;
+    }
     if(problemUnlocked) body[R.problem] = $("mProblemEdit").value;
 
     // Only stamp completion when the ticket is newly completed, so re-saving a
@@ -537,6 +565,84 @@ const Tickets = (() => {
     }finally{
       btn.disabled = false;
       btn.textContent = "Merge and close this inquiry";
+    }
+  }
+
+  /* ---------- No Action Required (one click, with Undo) ---------- */
+
+  async function markNoAction(id){
+    const t = tickets.find(x => x.Id === id);
+    if(!t) return;
+    const prev = {
+      status: statusOf(t),
+      completed: !!t[R.completed],
+      completedOn: t[R.completedOn] || null,
+      completedBy: t[R.completedBy] || "",
+      customerNotified: !!t[R.customerNotified]
+    };
+    if(prev.status === NO_ACTION_STATUS) return;
+    const now = new Date().toISOString();
+    const body = {
+      [R.status]: NO_ACTION_STATUS,
+      [R.completed]: true,
+      [R.completedOn]: now,
+      [R.completedBy]: App.user.name,
+      [R.customerNotified]: true      // guarantees the completion email flow never fires
+    };
+    try{
+      await spUpdate(CONFIG.lists.requests, id, body);
+      Object.assign(t, body);
+      renderTickets();
+      postAudit({
+        Title: `Inquiry #${formatTicketId(id)}`,
+        [A.ticketId]: id, [A.staffMember]: App.user.name, [A.logTime]: now,
+        [A.action]: `Marked ${NO_ACTION_STATUS} (no email sent)`,
+        [A.previousStatus]: prev.status, [A.newStatus]: NO_ACTION_STATUS,
+        [A.internalNotesSnapshot]: t[R.internalNotes] || "",
+        [A.customerNoteSnapshot]: t[R.customerNote] || "",
+        [A.problemSnapshot]: t[R.problem] || ""
+      }).then(() => loadAudit()).then(renderAudit).catch(() => {});
+      toast(`#${formatTicketId(id)} marked ${NO_ACTION_STATUS}.`, {
+        type: "success",
+        actionLabel: "Undo",
+        onAction: () => undoNoAction(id, prev),
+        duration: CONFIG.undoSeconds * 1000
+      });
+    }catch(err){
+      console.error(err);
+      toast(`#${formatTicketId(id)} wasn't updated: ${err.message}`, { type: "error" });
+      renderTickets();
+    }
+  }
+
+  async function undoNoAction(id, prev){
+    const t = tickets.find(x => x.Id === id);
+    const body = {
+      [R.status]: prev.status,
+      [R.completed]: prev.completed,
+      [R.completedOn]: prev.completedOn,
+      [R.completedBy]: prev.completedBy,
+      [R.customerNotified]: prev.customerNotified
+    };
+    try{
+      await spUpdate(CONFIG.lists.requests, id, body);
+      if(t) Object.assign(t, body);
+      renderTickets();
+      await postAudit({
+        Title: `Inquiry #${formatTicketId(id)}`,
+        [A.ticketId]: id, [A.staffMember]: App.user.name, [A.logTime]: new Date().toISOString(),
+        [A.action]: `Undid ${NO_ACTION_STATUS}`,
+        [A.previousStatus]: NO_ACTION_STATUS, [A.newStatus]: prev.status,
+        [A.internalNotesSnapshot]: t ? t[R.internalNotes] || "" : "",
+        [A.customerNoteSnapshot]: t ? t[R.customerNote] || "" : "",
+        [A.problemSnapshot]: t ? t[R.problem] || "" : ""
+      });
+      await loadAudit();
+      renderAudit();
+      toast(`#${formatTicketId(id)} is back in the queue.`, { type: "info" });
+    }catch(err){
+      console.error(err);
+      toast(`Undo didn't work: ${err.message}. Open the inquiry and change its status.`, { type: "error", duration: 0 });
     }
   }
 
