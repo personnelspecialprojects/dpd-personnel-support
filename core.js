@@ -15,7 +15,8 @@ const App = {
   team: []
 };
 
-const ViewHooks = {};  // viewId -> function called when that tab is shown
+const ViewHooks = {};  // viewId -> [functions] called when that tab is shown
+function onView(viewId, fn){ (ViewHooks[viewId] = ViewHooks[viewId] || []).push(fn); }
 
 /* ---------------- Auth ---------------- */
 
@@ -109,6 +110,8 @@ async function startSession(account){
     return;
   }
   if(!me){
+    // Record the attempt if SharePoint lets us; someone off the roster may not have write access.
+    audit(AUDIT_AREAS.access, "Access denied: not on the team roster", { silent: true });
     showGate("notAuthorizedScreen",
       `Your account isn't on the team roster for this portal. Contact ${CONFIG.adminContact} if you should have access.`);
     return;
@@ -124,6 +127,13 @@ async function startSession(account){
   document.getElementById("signOutBtn").addEventListener("click", signOut);
 
   showGate(null);
+  // Once per browser session, so page reloads don't flood the log.
+  let loggedThisSession = false;
+  try{ loggedThisSession = sessionStorage.getItem("ps-signin-logged") === App.user.key; }catch(_){}
+  if(!loggedThisSession){
+    audit(AUDIT_AREAS.access, `Signed in${App.isAdmin ? " (admin)" : ""}`);
+    try{ sessionStorage.setItem("ps-signin-logged", App.user.key); }catch(_){}
+  }
 
   // Activity board first — it's the screen people land on.
   try{
@@ -134,8 +144,12 @@ async function startSession(account){
   }
   const results = await Promise.allSettled([Work.init(), Tickets.init()]);
   results.forEach(r => { if(r.status === "rejected") console.error(r.reason); });
-  Reports.init();
-  Admin.init();
+  // Each module starts independently: one failing piece must not lock everyone out.
+  const safeInit = (name, fn) => { try{ fn(); }catch(err){ console.error(`${name} failed to start:`, err); } };
+  safeInit("Reports", () => Reports.init());
+  safeInit("Admin", () => Admin.init());
+  safeInit("Audit", () => Audit.init());
+  if(App.isAdmin) safeInit("Setup check", () => SetupCheck.init());
   markSynced();
   startPolling();
 }
@@ -160,7 +174,7 @@ async function poll(){
     console.warn("Token refresh failed; will retry next cycle.", err);
     return;
   }
-  const results = await Promise.allSettled([Activity.refresh(), Work.refresh(), Tickets.refresh()]);
+  const results = await Promise.allSettled([Activity.refresh(), Work.refresh(), Tickets.refresh(), Audit.refresh()]);
   results.forEach(r => { if(r.status === "rejected") console.warn("Refresh problem:", r.reason); });
   markSynced();
 }
@@ -306,6 +320,48 @@ function filterQuery(expr, extra = ""){
   return `$filter=${encodeURIComponent(expr)}${extra ? "&" + extra : ""}`;
 }
 
+/* ---------------- Audit log (app-wide) ---------------- */
+
+let auditErrorShownAt = 0;
+
+/* Write one Audit Log row. `entry` may include any AUDIT_FIELDS columns.
+   Never throws: an audit failure must not undo or block the user's actual change. */
+async function writeAudit(area, entry = {}, opts = {}){
+  const A = AUDIT_FIELDS;
+  const body = {
+    [A.area]: area,
+    [A.staffMember]: App.user ? App.user.name : "",
+    [A.staffEmail]: App.user ? App.user.username : "",
+    [A.logTime]: new Date().toISOString(),
+    ...entry
+  };
+  body.Title = String(entry.Title || `${area}: ${body[A.action] || ""}`).slice(0, 255);
+  try{
+    const row = await spCreate(CONFIG.lists.audit, body);
+    if(typeof Audit !== "undefined") Audit.add(row);
+    return row;
+  }catch(err){
+    console.error("Audit log entry failed to save:", err, body);
+    if(!opts.silent && Date.now() - auditErrorShownAt > 60000){
+      auditErrorShownAt = Date.now();
+      toast(`Your change saved, but its audit log entry didn't (${err.message}). ` +
+        `Let ${CONFIG.adminContact} know; the setup check in Admin will show what's wrong.`,
+        { type: "error", duration: 0 });
+    }
+    return null;
+  }
+}
+
+/* Shorthand: audit(AUDIT_AREAS.activity, "Logged ...", { recordId, details }) */
+function audit(area, action, extra = {}){
+  const A = AUDIT_FIELDS;
+  const entry = { [A.action]: action };
+  if(extra.recordId !== undefined && extra.recordId !== null) entry[A.recordId] = extra.recordId;
+  if(extra.details) entry[A.details] = String(extra.details);
+  if(extra.title) entry.Title = extra.title;
+  return writeAudit(area, entry, extra);
+}
+
 /* ---------------- Utilities ---------------- */
 
 function escapeHtml(s){
@@ -446,7 +502,7 @@ function switchTab(viewId){
     t.setAttribute("aria-selected", on ? "true" : "false");
   });
   document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === viewId));
-  if(ViewHooks[viewId]) ViewHooks[viewId]();
+  (ViewHooks[viewId] || []).forEach(fn => { try{ fn(); }catch(err){ console.error(err); } });
 }
 
 function openOverlay(id){ document.getElementById(id).classList.add("active"); }
