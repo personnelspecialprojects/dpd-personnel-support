@@ -134,6 +134,11 @@ const WORKLOG_FIELDS = {
   loggedAt: "LoggedAt"                // Date and time
 };
 
+/* Status for inquiries closed without a response (FYI emails to the DL).
+   Must match the choice added to the Requests list's Status column exactly.
+   Senders are asked to put this phrase in the subject line. */
+const NO_ACTION_STATUS = "No Action Required";
+
 const PRESET_COLORS = [
   { name: "Yellow", hex: "#F5C518" },
   { name: "Orange", hex: "#E67E22" },
