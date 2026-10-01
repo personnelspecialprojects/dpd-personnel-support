@@ -55,9 +55,9 @@ const Admin = (() => {
             return `<tr class="static${active ? "" : " inactive"}">
               <td class="num">${t[T.sortOrder] ?? ""}</td>
               <td><strong>${escapeHtml(t.Title || "")}</strong>${t[T.description] ? `<div class="muted small">${escapeHtml(t[T.description])}</div>` : ""}</td>
-              <td>${mode === "click" ? "Nothing (one click)" : escapeHtml(Activity.inputLabel(t))}</td>
+              <td>${mode === "click" ? "Nothing (one click)" : mode === "count" ? `A count (${escapeHtml(Activity.inputLabel(t))})` : escapeHtml(Activity.inputLabel(t))}</td>
               <td>${Activity.hasChecklist(t) ? plural(Activity.templateSteps(t).length, "step") : "—"}</td>
-              <td>${Activity.hasChecklist(t) ? "Open items" : mode === "click" ? "—" : days > 0 ? `Last ${plural(days, "day")}` : "Off"}</td>
+              <td>${Activity.hasChecklist(t) ? "Open items" : (mode === "click" || mode === "count") ? "—" : days > 0 ? `Last ${plural(days, "day")}` : "Off"}</td>
               <td>${active ? "Active" : "Off"}</td>
               <td class="actions">
                 <button type="button" class="link-btn" data-edit="${t.Id}">Edit</button>
@@ -110,9 +110,13 @@ const Admin = (() => {
   function syncInputTypeFields(){
     const mode = document.getElementById("atInputType").value;
     const click = mode === "Click Only";
+    const count = mode === "Count";
     document.getElementById("atInputLabelRow").hidden = click;
-    document.getElementById("atDupRow").hidden = click || tplSteps.length > 0;
-    document.getElementById("atInputLabel").placeholder = mode === "Reference" ? "e.g. Pay period, Case #" : "Employee #";
+    // A count has no single item to check for duplicates, and is logged in one step (no checklist).
+    document.getElementById("atDupRow").hidden = click || count || tplSteps.length > 0;
+    document.getElementById("atChecklistRow").hidden = count;
+    document.getElementById("atInputLabel").placeholder =
+      mode === "Reference" ? "e.g. Pay period, Case #" : count ? "How many?" : "Employee #";
   }
 
   async function saveType(){
@@ -140,10 +144,10 @@ const Admin = (() => {
       [T.category]: category || "General",
       [T.inputType]: inputType,
       [T.inputLabel]: inputType === "Click Only" ? "" : label,
-      [T.duplicateWindowDays]: inputType === "Click Only" ? 0 : Math.round(dup),
+      [T.duplicateWindowDays]: (inputType === "Click Only" || inputType === "Count") ? 0 : Math.round(dup),
       [T.sortOrder]: orderRaw === "" ? null : Number(orderRaw),
       [T.description]: $("atDescription").value.trim(),
-      [T.checklistSteps]: tplSteps.length
+      [T.checklistSteps]: tplSteps.length && inputType !== "Count"
         ? JSON.stringify(tplSteps.map(x => ({ text: x.text, external: !!x.external })))
         : ""
     };
