@@ -1,3 +1,4 @@
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["setup-check.js"] = "2026.10.02-2";
 /* ============================================================
    setup-check.js — Admin → "Check SharePoint setup".
    Read-only. Compares every list and column the app expects
@@ -48,7 +49,7 @@ const SetupCheck = (() => {
         [R.receivedOn, "DateTime", { index: true, time: true }],
         [R.entryType, "Choice", { choices: ["Automated", "Manual"] }],
         [R.source, "Choice", { choices: ["Email", "Phone", "Walk-in"] }],
-        [R.requesterName, "Text"], [R.phoneNumber, "Text"]
+        [R.requesterName, "Text"], [R.phoneNumber, "Text"], [R.queue, "Text"]
       ]},
       { list: CONFIG.lists.audit, purpose: "the audit log", renamedFrom: "Request Audit Log", fields: [
         [A.area, "Text"], [A.recordId, "Number"], [A.details, "Note", { plain: true }], [A.staffEmail, "Text"],
@@ -231,9 +232,11 @@ const SetupCheck = (() => {
           ${lines ? `<ul>${lines}</ul>` : ""}
         </div>`;
       }).join("")}
-      <p class="muted small">Checked ${escapeHtml(when)}. Columns the app doesn't use are ignored, so extra columns are fine.</p>`;
+      <p class="muted small">Checked ${escapeHtml(when)}. Columns the app doesn't use are ignored, so extra columns are fine.
+        Portal version ${escapeHtml(window.PS_PAGE_VERSION || "unknown")}${outdatedFiles().length ? `; <strong class="error-text">out-of-date files: ${escapeHtml(outdatedFiles().join(", "))}</strong>` : "; all files current"}.</p>`;
 
-    lastText = [`Personnel Support setup check, ${when}`, headline, ""].concat(results.map(r => {
+    lastText = [`Personnel Support setup check, ${when}`, `Portal version ${window.PS_PAGE_VERSION || "unknown"}` +
+      (outdatedFiles().length ? `; OUT-OF-DATE FILES: ${outdatedFiles().join(", ")}` : "; all files current"), headline, ""].concat(results.map(r => {
       const head = `${r.errors.length ? "PROBLEM" : r.warnings.length ? "WARNING" : "OK"}  ${r.list}`;
       return [head, ...r.errors.map(t => `   - ${t}`), ...r.warnings.map(t => `   - (warning) ${t}`)].join("\n");
     })).join("\n");
