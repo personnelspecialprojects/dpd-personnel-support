@@ -43,8 +43,15 @@ const TYPE_FIELDS = {
   sortOrder: "SortOrder",                 // Number — controls row AND category order
   description: "Description",             // Single line of text (optional helper text)
   active: "Active",                       // Yes/No
-  checklistSteps: "ChecklistSteps"        // Multiple lines of text (plain). Empty = simple one-step logging.
+  checklistSteps: "ChecklistSteps",       // Multiple lines of text (plain). Empty = simple one-step logging.
+  team: "Team"                            // Choice: SRU | PSU | Both. Blank = shown to both teams
 };
+
+/* Sub-teams within Personnel Support. Activities belong to one of these, or to
+   TEAM_BOTH (shared). The Dashboard's logging panel toggles between them.
+   To add a team later, add it here and as a choice on both Team columns. */
+const TEAMS = ["SRU", "PSU"];
+const TEAM_BOTH = "Both";
 
 const INPUT_TYPES = ["Employee Number", "Reference", "Click Only", "Count"];
 
@@ -110,7 +117,8 @@ const ALERT_FIELDS = {
 
 const TEAM_FIELDS = {
   title: "Title",   // email address
-  role: "Role"      // Choice: Staff | Admin
+  role: "Role",     // Choice: Staff | Admin
+  team: "Team"      // Choice: SRU | PSU (optional) — which team's activities the Dashboard opens on
 };
 
 /* Work Items list — one row per started checklist item (e.g. one job posting) */
