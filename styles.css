@@ -72,6 +72,15 @@ p{ margin:0 0 8px; }
   border-radius:10px; background:var(--gold); color:var(--navy); font-weight:700;
 }
 
+.ver{ font-variant-numeric:tabular-nums; opacity:.75; }
+.version-banner{
+  background:#FFF6DC; color:#5C3F00; border-bottom:1px solid #E9D49A;
+  padding:10px 24px; font-size:13.5px;
+}
+.version-banner kbd{
+  font:inherit; font-size:12px; font-weight:700; padding:0 5px; border:1px solid #C9B27A; border-radius:3px; background:#fff;
+}
+
 /* ---------- gates ---------- */
 .gate{
   min-height:70vh; display:flex; flex-direction:column;
@@ -345,6 +354,13 @@ table.matrix tfoot th, table.matrix tfoot td{ font-weight:700; border-top:2px so
 .btn-noaction:hover:not(:disabled){ border-color:var(--navy-2); color:var(--navy); background:#F4F6FA; }
 .btn-noaction:disabled{ opacity:.5; cursor:progress; }
 td.quick{ text-align:right; width:1%; vertical-align:middle; }
+.quick-btns{ display:flex; gap:6px; justify-content:flex-end; flex-wrap:wrap; }
+.btn-special{ color:#5B3E8C; }
+.btn-special:hover:not(:disabled){ border-color:#7A5BB0; color:#4A2F78; background:#F5F1FB; }
+.special-panel{ padding:0; overflow:hidden; }
+.special-panel .dash-head{ padding:16px 20px 6px; }
+.special-panel .sp-intro{ padding:0 20px 10px; margin:0; max-width:90ch; }
+.special-panel .dash-tools{ padding:0 20px 12px; }
 .visually-hidden{ position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
 
 /* ---------- admin bits ---------- */
