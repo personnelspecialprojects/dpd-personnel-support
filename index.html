@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Personnel Support</title>
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="styles.css?v=2026.10.02-2">
 <script src="https://alcdn.msauth.net/browser/2.35.0/js/msal-browser.min.js"
   onerror="this.onerror=null;var s=document.createElement('script');s.src='https://alcdn.msftauth.net/browser/2.35.0/js/msal-browser.min.js';document.head.appendChild(s);"></script>
 </head>
@@ -17,6 +17,8 @@
   </div>
   <div id="userBox"></div>
 </header>
+
+<div id="versionBanner" class="version-banner" role="alert" hidden></div>
 
 <!-- ======= Gates ======= -->
 <section id="signInScreen" class="gate">
@@ -38,6 +40,7 @@
 <main id="mainApp" hidden>
   <nav class="tabs" role="tablist">
     <button type="button" class="tab active" role="tab" aria-selected="true" data-view="dashView">Dashboard <span id="openInquiryBadge" class="tab-badge" hidden></span></button>
+    <button type="button" class="tab" role="tab" aria-selected="false" data-view="specialView">Special Project Inquiries <span id="specialBadge" class="tab-badge" hidden></span></button>
     <button type="button" class="tab" role="tab" aria-selected="false" data-view="workView">Tracked work <span id="myWorkBadge" class="tab-badge" hidden></span></button>
     <button type="button" class="tab" role="tab" aria-selected="false" data-view="reportsView">Reports</button>
     <button type="button" class="tab" role="tab" aria-selected="false" data-view="auditView">Audit log</button>
@@ -97,6 +100,40 @@
     </div>
   </div>
 
+  <!-- SPECIAL PROJECT INQUIRIES: same interface as the Dashboard's inquiry panel -->
+  <div class="view" id="specialView">
+    <section class="panel special-panel" aria-labelledby="spHeading">
+      <div class="dash-head">
+        <div class="dash-title">
+          <h2 id="spHeading">Special Project Inquiries</h2>
+          <span id="spOpenCount" class="head-count"></span>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" id="spOpenManualEntryBtn">New manual inquiry</button>
+      </div>
+      <p class="muted small sp-intro">Inquiries set aside from the Dashboard for a special project. Work them the same way: open one to update its status and notes. <strong>Move back</strong> returns an inquiry to the Dashboard.</p>
+      <div class="dash-tools">
+        <select id="spFilterStatus" aria-label="Filter by status"></select>
+        <input type="text" id="spSearchBox" placeholder="Search name, email, title, #" aria-label="Search special project inquiries">
+        <label class="check small"><input type="checkbox" id="spOpenOnly" checked> Open only</label>
+      </div>
+      <div class="table-scroll">
+        <table class="data inq" id="spTicketsTable">
+          <thead>
+            <tr>
+              <th data-sort="ID">#</th>
+              <th data-sort="Title">Inquiry</th>
+              <th data-sort="Received">Received</th>
+              <th data-sort="Status">Status</th>
+              <th><span class="visually-hidden">Quick actions</span></th>
+            </tr>
+          </thead>
+          <tbody id="spTicketsBody"></tbody>
+        </table>
+        <div id="spEmptyState" class="empty-block" hidden></div>
+      </div>
+    </section>
+  </div>
+
   <!-- TRACKED WORK -->
   <div class="view" id="workView">
     <div class="toolbar">
@@ -122,7 +159,7 @@
   <div class="view" id="reportsView">
     <section class="panel">
       <div class="toolbar">
-        <select id="rpTeam" aria-label="Team"></select>
+        <select id="rpTeam" aria-label="Team"><option value="">All teams</option><option value="SRU">SRU</option><option value="PSU">PSU</option></select>
         <select id="rpPreset" aria-label="Date range">
           <option value="today">Today</option>
           <option value="thisWeek">This week</option>
@@ -233,7 +270,7 @@
       <div class="toolbar">
         <input type="email" id="newStaffEmail" placeholder="firstname.lastname@dallaspolice.gov" class="grow-input" aria-label="Email address">
         <select id="newStaffRole" aria-label="Role"><option value="Staff">Staff</option><option value="Admin">Admin</option></select>
-        <select id="newStaffTeam" aria-label="Team"></select>
+        <select id="newStaffTeam" aria-label="Team"><option value="">No team</option><option value="SRU">SRU</option><option value="PSU">PSU</option></select>
         <button type="button" class="btn btn-navy" id="addStaffBtn">Add person</button>
       </div>
       <div id="staffSaveMsg" class="save-msg"></div>
@@ -302,6 +339,7 @@
       </div>
     </div>
     <div class="modal-footer">
+      <button type="button" class="btn btn-ghost" id="mQueueBtn">Move to Special Project Inquiries</button>
       <button type="button" class="btn btn-ghost" id="mNoActionBtn" title="Close without a response. It doesn't count as a resolved inquiry.">No Action Required</button>
       <div class="save-msg" id="saveMsg"></div>
       <button type="button" class="btn btn-ghost" id="cancelBtn">Cancel</button>
@@ -375,7 +413,7 @@
       <div class="field-row">
         <label for="atTeam">Team</label>
         <div>
-          <select id="atTeam"></select>
+          <select id="atTeam"><option value="SRU">SRU</option><option value="PSU">PSU</option><option value="Both">Both teams</option></select>
           <div class="hint">Which team's Dashboard shows this activity. "Both" shows it to everyone.</div>
         </div>
       </div>
@@ -449,15 +487,21 @@
 
 <div id="toastHost" aria-live="polite"></div>
 
-<script src="config.js"></script>
-<script src="core.js"></script>
-<script src="activity.js"></script>
-<script src="work.js"></script>
-<script src="tickets.js"></script>
-<script src="reports.js"></script>
-<script src="admin.js"></script>
-<script src="audit.js"></script>
-<script src="setup-check.js"></script>
+<script>
+  /* Release stamp. Every .js file carries the same stamp; core.js warns if any differ
+     (an old cached or un-uploaded file). Bump it in ALL files for each release. */
+  window.PS_PAGE_VERSION = "2026.10.02-2";
+  window.PS_FILE_VERSIONS = {};
+</script>
+<script src="config.js?v=2026.10.02-2"></script>
+<script src="core.js?v=2026.10.02-2"></script>
+<script src="activity.js?v=2026.10.02-2"></script>
+<script src="work.js?v=2026.10.02-2"></script>
+<script src="tickets.js?v=2026.10.02-2"></script>
+<script src="reports.js?v=2026.10.02-2"></script>
+<script src="admin.js?v=2026.10.02-2"></script>
+<script src="audit.js?v=2026.10.02-2"></script>
+<script src="setup-check.js?v=2026.10.02-2"></script>
 <script>boot();</script>
 </body>
 </html>
