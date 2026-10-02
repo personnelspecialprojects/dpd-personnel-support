@@ -1,3 +1,4 @@
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["reports.js"] = "2026.10.02-2";
 /* ============================================================
    reports.js — activity counts by person and task for any date
    range, plus inquiries resolved, exports, and a lookup that
@@ -8,6 +9,7 @@ const Reports = (() => {
   const F = LOG_FIELDS;
   const R = REQ_FIELDS;
   const INQUIRY_KEY = "__inquiries__";
+  const SPECIAL_KEY = "__special_inquiries__";
   let wired = false;
   let loadedOnce = false;
   let entries = [];
@@ -130,7 +132,7 @@ const Reports = (() => {
       names[key] = names[key] || { name: e[F.activityName], category: e[F.category] };
       bump(key, e[F.staffName] || "Unknown", Activity.qty(e));   // Count activities add their number
     });
-    resolved.forEach(t => bump(INQUIRY_KEY, t[R.completedBy] || "Unassigned"));
+    resolved.forEach(t => bump(Tickets.queueOf(t) === "special" ? SPECIAL_KEY : INQUIRY_KEY, t[R.completedBy] || "Unassigned"));
 
     // Row order follows the board: current activity types first (by category/sort order),
     // then anything retired that still has entries in this range.
@@ -139,10 +141,13 @@ const Reports = (() => {
     const groups = Activity.groupByCategory(Activity.types.filter(t => cells[String(t.Id)]))
       .map(g => ({ name: g.name, rows: g.types.map(t => ({ key: String(t.Id), name: t.Title })) }));
     const orphanRows = Object.keys(cells)
-      .filter(k => k !== INQUIRY_KEY && !typesById[k])
+      .filter(k => k !== INQUIRY_KEY && k !== SPECIAL_KEY && !typesById[k])
       .map(k => ({ key: k, name: `${names[k].name || "Unknown activity"} (retired)` }));
     if(orphanRows.length) groups.push({ name: "Retired activities", rows: orphanRows });
-    if(cells[INQUIRY_KEY]) groups.push({ name: "Inquiries", rows: [{ key: INQUIRY_KEY, name: "Inquiries resolved" }] });
+    const inqRows = [];
+    if(cells[INQUIRY_KEY]) inqRows.push({ key: INQUIRY_KEY, name: "Inquiries resolved" });
+    if(cells[SPECIAL_KEY]) inqRows.push({ key: SPECIAL_KEY, name: `${SPECIAL_QUEUE} resolved` });
+    if(inqRows.length) groups.push({ name: "Inquiries", rows: inqRows });
 
     const people = [...staff].sort((a, b) => a.localeCompare(b));
     return { groups, people, cells, resolved };
@@ -155,7 +160,10 @@ const Reports = (() => {
     const toLabel = addDays(range.to, -1).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
     const fromLabel = range.from.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
-    const open = Tickets.all.filter(t => ["New", "In Progress"].includes(Tickets.statusOf(t))).length;
+    const isOpenInq = t => ["New", "In Progress"].includes(Tickets.statusOf(t));
+    const open = Tickets.all.filter(t => isOpenInq(t) && Tickets.queueOf(t) === "main").length;
+    const openSpecial = Tickets.all.filter(t => isOpenInq(t) && Tickets.queueOf(t) === "special").length;
+    const resolvedSpecial = resolved.filter(t => Tickets.queueOf(t) === "special").length;
     const noAction = Tickets.all.filter(t => {
       if(Tickets.statusOf(t) !== NO_ACTION_STATUS || !t[R.completedOn]) return false;
       const d = new Date(t[R.completedOn]);
@@ -170,11 +178,13 @@ const Reports = (() => {
     const totalItems = shown.reduce((a, e) => a + Activity.qty(e), 0);
     document.getElementById("rpSummary").innerHTML =
       `<strong>${totalItems.toLocaleString()}</strong> ${totalItems === 1 ? "item" : "items"} of work logged and ` +
-      `<strong>${resolved.length}</strong> ${resolved.length === 1 ? "inquiry" : "inquiries"} resolved, ` +
+      `<strong>${resolved.length}</strong> ${resolved.length === 1 ? "inquiry" : "inquiries"} resolved` +
+      `${resolvedSpecial ? ` (${resolvedSpecial} of them ${escapeHtml(SPECIAL_QUEUE)})` : ""}, ` +
       `${fromLabel} to ${toLabel}${selectedTeam() ? `, ${escapeHtml(selectedTeam())} activities plus shared ones (inquiries show under All teams)` : ""}` +
       `${noAction ? ` (plus ${noAction} no-action ${noAction === 1 ? "email" : "emails"} closed without a response)` : ""}. ` +
       `${avg !== null ? `Inquiries took ${avg} days on average to resolve. ` : ""}` +
-      `${plural(open, "inquiry", "inquiries")} open right now` +
+      `${plural(open, "inquiry", "inquiries")} open on the Dashboard` +
+      `${openSpecial ? ` and ${openSpecial} in ${escapeHtml(SPECIAL_QUEUE)}` : ""} right now` +
       `${typeof Work !== "undefined" ? `, and ${plural(Work.all.filter(Work.isOpen).length, "checklist item")} in progress` : ""}.` +
       ` Checklist items count here when they're marked complete.`;
 
@@ -236,7 +246,7 @@ const Reports = (() => {
       .sort((a, b) => new Date(a[F.loggedAt]) - new Date(b[F.loggedAt]))
       .forEach(e => rows.push([formatDate(e[F.loggedAt]), e[F.category], e[F.activityName], e[F.identifier], Activity.qty(e), e[F.staffName], e[F.staffEmail]]));
     resolvedInRange().forEach(t => rows.push([
-      formatDate(t[R.completedOn]), "Inquiries", `Inquiry resolved: ${t.Title || ""}`, t[R.email] || t[R.phoneNumber] || "", 1, t[R.completedBy], ""
+      formatDate(t[R.completedOn]), "Inquiries", `${Tickets.queueOf(t) === "special" ? SPECIAL_QUEUE.replace(/ies$/, "y") : "Inquiry"} resolved: ${t.Title || ""}`, t[R.email] || t[R.phoneNumber] || "", 1, t[R.completedBy], ""
     ]));
     downloadCsv(`activity-entries_${rangeSlug()}.csv`, rows);
     audit(AUDIT_AREAS.data, `Exported all activity entries (${plural(rows.length - 1, "row")}), ${rangeSlug().replace("_to_", " to ")}`);
