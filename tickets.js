@@ -1,3 +1,4 @@
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["tickets.js"] = "2026.10.02-2";
 /* ============================================================
    tickets.js — the Inquiries tab, Audit Log tab, and aging alert
    rules. Ported from the Secondary Employment Support Portal,
@@ -53,9 +54,19 @@ const Tickets = (() => {
   function wire(){
     wired = true;
     const on = (id, ev, fn) => document.getElementById(id).addEventListener(ev, fn);
-    on("filterStatus", "change", renderTickets);
-    on("hideClosedCheckbox", "change", renderTickets);
-    on("searchBox", "input", renderTickets);
+    Object.values(LIST_UI).forEach(ui => {
+      on(ui.filter, "change", renderTickets);
+      on(ui.openOnly, "change", renderTickets);
+      on(ui.search, "input", renderTickets);
+      document.querySelectorAll(`#${ui.table} th[data-sort]`).forEach(th =>
+        th.addEventListener("click", () => sortBy(th.dataset.sort)));
+    });
+    on("mQueueBtn", "click", async () => {
+      const id = currentId;
+      const t = tickets.find(x => x.Id === id);
+      closeModal();
+      if(t) await moveQueue(id, queueOf(t) === "special" ? "main" : "special");
+    });
     on("modalClose", "click", closeModal);
     on("cancelBtn", "click", closeModal);
     on("saveBtn", "click", saveTicket);
@@ -72,15 +83,14 @@ const Tickets = (() => {
     });
     on("problemLockBtn", "click", () => problemUnlocked ? lockProblem() : unlockProblem());
 
-    on("openManualEntryBtn", "click", openManualEntry);
+    on("openManualEntryBtn", "click", () => openManualEntry("main"));
+    on("spOpenManualEntryBtn", "click", () => openManualEntry("special"));
     on("manualEntryClose", "click", () => closeOverlay("manualEntryOverlay"));
     on("meCancelBtn", "click", () => closeOverlay("manualEntryOverlay"));
     on("meSaveBtn", "click", createManualEntry);
     ["meMethodPhone", "meMethodEmail", "meMethodWalkin"].forEach(id => on(id, "change", updateMethodFields));
 
 
-    document.querySelectorAll("#ticketsTable th[data-sort]").forEach(th =>
-      th.addEventListener("click", () => sortBy(th.dataset.sort)));
 
     // alert rules (UI lives in the Admin tab)
     on("ruleThresholdUnit", "change", () => {
@@ -90,6 +100,7 @@ const Tickets = (() => {
     renderPalette();
 
     onView("dashView", renderTickets);
+    onView("specialView", renderTickets);
   }
 
   /* ---------- helpers ---------- */
@@ -262,11 +273,26 @@ const Tickets = (() => {
   const STATUSES = ["New", "In Progress", "Completed", "Merged", NO_ACTION_STATUS];
   function isOpenStatus(s){ return s === "New" || s === "In Progress"; }
 
-  function filtered(){
-    const status = document.getElementById("filterStatus").value;
-    const search = document.getElementById("searchBox").value.toLowerCase();
-    const openOnly = document.getElementById("hideClosedCheckbox").checked;
+  /* The two inquiry lists share one implementation. "main" is the Dashboard panel;
+     "special" is the Special Project Inquiries tab. An inquiry belongs to one by its Queue value. */
+  const LIST_UI = {
+    main: { body: "ticketsBody", filter: "filterStatus", search: "searchBox", openOnly: "hideClosedCheckbox",
+            empty: "emptyState", headCount: "inqOpenCount", badge: "openInquiryBadge", table: "ticketsTable" },
+    special: { body: "spTicketsBody", filter: "spFilterStatus", search: "spSearchBox", openOnly: "spOpenOnly",
+            empty: "spEmptyState", headCount: "spOpenCount", badge: "specialBadge", table: "spTicketsTable" }
+  };
+
+  function queueOf(t){
+    return String(t[R.queue] || "").trim().toLowerCase() === SPECIAL_QUEUE.toLowerCase() ? "special" : "main";
+  }
+
+  function filtered(key){
+    const ui = LIST_UI[key];
+    const status = document.getElementById(ui.filter).value;
+    const search = document.getElementById(ui.search).value.toLowerCase();
+    const openOnly = document.getElementById(ui.openOnly).checked;
     return tickets.filter(t => {
+      if(queueOf(t) !== key) return false;
       const s = statusOf(t);
       if(openOnly && !status && !isOpenStatus(s)) return false;   // a chosen status overrides "Open only"
       if(status && s !== status) return false;
@@ -284,8 +310,8 @@ const Tickets = (() => {
   }
 
   /* Status dropdown shows live counts, e.g. "New (4)". Keeps the panel compact. */
-  function renderStatusOptions(counts){
-    const sel = document.getElementById("filterStatus");
+  function renderStatusOptions(selId, counts){
+    const sel = document.getElementById(selId);
     const current = sel.value;
     sel.innerHTML = `<option value="">All statuses</option>` +
       STATUSES.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)} (${counts[s] || 0})</option>`).join("");
@@ -293,30 +319,41 @@ const Tickets = (() => {
   }
 
   function renderTickets(){
-    const body = document.getElementById("ticketsBody");
+    renderList("main");
+    renderList("special");
+  }
+
+  function renderList(key){
+    const ui = LIST_UI[key];
+    const body = document.getElementById(ui.body);
     if(!body) return;
 
     const counts = {};
-    tickets.forEach(t => { const s = statusOf(t); counts[s] = (counts[s] || 0) + 1; });
-    renderStatusOptions(counts);
+    tickets.forEach(t => { if(queueOf(t) === key){ const s = statusOf(t); counts[s] = (counts[s] || 0) + 1; } });
+    renderStatusOptions(ui.filter, counts);
     const open = (counts.New || 0) + (counts["In Progress"] || 0);
-    const badge = document.getElementById("openInquiryBadge");
+    const badge = document.getElementById(ui.badge);
     if(badge){ badge.textContent = open; badge.hidden = open === 0; }
-    const head = document.getElementById("inqOpenCount");
+    const head = document.getElementById(ui.headCount);
     if(head) head.textContent = `${open} open`;
 
-    const list = filtered();
-    const empty = document.getElementById("emptyState");
+    const list = filtered(key);
+    const empty = document.getElementById(ui.empty);
     empty.hidden = list.length > 0;
-    empty.innerHTML = document.getElementById("hideClosedCheckbox").checked && !document.getElementById("filterStatus").value
-      && !document.getElementById("searchBox").value
-      ? "<p><strong>All caught up.</strong> No open inquiries.</p>"
+    empty.innerHTML = document.getElementById(ui.openOnly).checked && !document.getElementById(ui.filter).value
+      && !document.getElementById(ui.search).value
+      ? (key === "special"
+          ? `<p><strong>No open ${escapeHtml(SPECIAL_QUEUE)}.</strong></p><p class="small">Use the <strong>Special Project</strong> button on a Dashboard inquiry to move it here.</p>`
+          : "<p><strong>All caught up.</strong> No open inquiries.</p>")
       : "<p>No inquiries match these filters.</p>";
 
     body.innerHTML = list.map(t => {
       const s = statusOf(t);
       const color = alertColor(t);
       const who = t[R.requesterName] || t[R.email] || (t[R.phoneNumber] ? `Phone: ${t[R.phoneNumber]}` : "");
+      const moveBtn = key === "special"
+        ? `<button type="button" class="btn-noaction" data-move="${t.Id}" data-to="main" title="Move back to the Dashboard inquiries">Move back</button>`
+        : `<button type="button" class="btn-noaction btn-special" data-move="${t.Id}" data-to="special" title="Move to the ${escapeHtml(SPECIAL_QUEUE)} tab">Special Project</button>`;
       return `<tr data-ticket-id="${t.Id}" class="${color ? "alert-row" : ""}" ${color ? `style="--alert-color:${escapeHtml(color)}"` : ""} tabindex="0">
         <td class="nowrap muted">${formatTicketId(t.Id)}</td>
         <td>
@@ -327,7 +364,7 @@ const Tickets = (() => {
         <td class="nowrap"><span class="status-badge status-${s.replace(/\s/g, "")}">${escapeHtml(s)}</span>
           ${!isOpenStatus(s) && t[R.completedBy] ? `<div class="muted small">${escapeHtml(t[R.completedBy])}</div>` : ""}</td>
         <td class="quick">${isOpenStatus(s)
-          ? `<button type="button" class="btn-noaction" data-noaction="${t.Id}" title="Close without a response. It doesn't count as a resolved inquiry.">No Action Required</button>`
+          ? `<div class="quick-btns">${moveBtn}<button type="button" class="btn-noaction" data-noaction="${t.Id}" title="Close without a response. It doesn't count as a resolved inquiry.">No Action Required</button></div>`
           : ""}</td>
       </tr>`;
     }).join("");
@@ -339,11 +376,61 @@ const Tickets = (() => {
       });
       b.addEventListener("keydown", e => e.stopPropagation());
     });
+    body.querySelectorAll("[data-move]").forEach(b => {
+      b.addEventListener("click", e => {
+        e.stopPropagation();
+        b.disabled = true;
+        moveQueue(Number(b.dataset.move), b.dataset.to);
+      });
+      b.addEventListener("keydown", e => e.stopPropagation());
+    });
     body.querySelectorAll("tr").forEach(tr => {
       const go = () => openModal(Number(tr.dataset.ticketId));
       tr.addEventListener("click", go);
       tr.addEventListener("keydown", e => { if(e.key === "Enter") go(); });
     });
+  }
+
+  /* ---------- Special Project Inquiries: move between tabs (one click, with Undo) ---------- */
+
+  const QUEUE_LABEL = { main: "Inquiries", special: SPECIAL_QUEUE };
+
+  async function moveQueue(id, toKey, isUndo){
+    const t = tickets.find(x => x.Id === id);
+    if(!t) return;
+    const fromKey = queueOf(t);
+    if(fromKey === toKey){ renderTickets(); return; }
+    const value = toKey === "special" ? SPECIAL_QUEUE : "";
+    try{
+      await spUpdate(CONFIG.lists.requests, id, { [R.queue]: value });
+      t[R.queue] = value;
+      renderTickets();
+      postAudit({
+        Title: `Inquiry #${formatTicketId(id)}`,
+        [A.ticketId]: id, [A.staffMember]: App.user.name, [A.logTime]: new Date().toISOString(),
+        [A.action]: isUndo
+          ? `Undid move: back to ${QUEUE_LABEL[toKey]}`
+          : (toKey === "special" ? `Moved to ${SPECIAL_QUEUE}` : `Moved back to Inquiries (from ${SPECIAL_QUEUE})`),
+        [A.previousStatus]: statusOf(t), [A.newStatus]: statusOf(t),
+        [A.internalNotesSnapshot]: t[R.internalNotes] || "",
+        [A.problemSnapshot]: t[R.problem] || ""
+      });
+      if(!isUndo){
+        toast(`#${formatTicketId(id)} moved to ${QUEUE_LABEL[toKey]}.`, {
+          type: "success",
+          actionLabel: "Undo",
+          onAction: () => moveQueue(id, fromKey, true),
+          duration: CONFIG.undoSeconds * 1000
+        });
+      }else{
+        toast(`#${formatTicketId(id)} is back in ${QUEUE_LABEL[toKey]}.`, { type: "info" });
+      }
+    }catch(err){
+      console.error(err);
+      toast(`#${formatTicketId(id)} wasn't moved: ${err.message}. If the Requests list has no Queue column yet, run the setup check in Admin.`,
+        { type: "error", duration: 0 });
+      renderTickets();
+    }
   }
 
   /* ---------- ticket modal ---------- */
@@ -362,7 +449,9 @@ const Tickets = (() => {
     const $ = id => document.getElementById(id);
     $("mRequesterName").value = storedName || deriveNameFromEmail(t[R.email]);
     $("mRequesterNameHint").hidden = !!storedName;
-    $("modalTitle").textContent = `Inquiry #${formatTicketId(id)}`;
+    const inSpecial = queueOf(t) === "special";
+    $("modalTitle").textContent = `Inquiry #${formatTicketId(id)}${inSpecial ? ` · ${SPECIAL_QUEUE}` : ""}`;
+    $("mQueueBtn").textContent = inSpecial ? "Move back to Inquiries" : `Move to ${SPECIAL_QUEUE}`;
     $("mReq").textContent = t.Title || "";
     $("mEmail").textContent = t[R.email] || (t[R.phoneNumber] ? `Phone: ${t[R.phoneNumber]}` : "");
     $("mCreated").textContent = formatDate(t[R.receivedOn]);
@@ -417,7 +506,7 @@ const Tickets = (() => {
     sel.innerHTML = '<option value="">Select the original inquiry...</option>' +
       tickets.filter(t => t.Id !== excludeId && statusOf(t) !== "Merged" && statusOf(t) !== NO_ACTION_STATUS)
         .sort((a, b) => b.Id - a.Id)
-        .map(t => `<option value="${t.Id}">#${formatTicketId(t.Id)} — ${escapeHtml(t.Title || "(no subject)")} — ${escapeHtml(t[R.email] || t[R.requesterName] || "")}</option>`)
+        .map(t => `<option value="${t.Id}">#${formatTicketId(t.Id)}${queueOf(t) === "special" ? ` [${SPECIAL_QUEUE}]` : ""} — ${escapeHtml(t.Title || "(no subject)")} — ${escapeHtml(t[R.email] || t[R.requesterName] || "")}</option>`)
         .join("");
   }
 
@@ -620,8 +709,12 @@ const Tickets = (() => {
 
   /* ---------- manual entry ---------- */
 
-  function openManualEntry(){
+  let manualQueue = "main";
+
+  function openManualEntry(queueKey){
+    manualQueue = queueKey === "special" ? "special" : "main";
     const $ = id => document.getElementById(id);
+    $("meTitleHeading").textContent = manualQueue === "special" ? `New manual inquiry (${SPECIAL_QUEUE})` : "New manual inquiry";
     $("meMethodPhone").checked = true;
     ["meRequesterName", "mePhoneNumber", "meEmail", "meTitle", "meDescription", "meInternal"]
       .forEach(id => { $(id).value = ""; });
@@ -673,6 +766,7 @@ const Tickets = (() => {
       [R.phoneNumber]: isPhone ? phone : "",
       [R.completed]: status === "Completed"
     };
+    if(manualQueue === "special") body[R.queue] = SPECIAL_QUEUE;
     if(status === "Completed"){
       body[R.completedOn] = now;
       body[R.completedBy] = App.user.name;
@@ -682,7 +776,7 @@ const Tickets = (() => {
       await postAudit({
         Title: `Inquiry #M${created.Id}`,
         [A.ticketId]: created.Id, [A.staffMember]: App.user.name, [A.logTime]: now,
-        [A.action]: `Manual inquiry created (${method})${status === "Completed" ? " and closed" : ""}`,
+        [A.action]: `Manual inquiry created (${method})${manualQueue === "special" ? ` in ${SPECIAL_QUEUE}` : ""}${status === "Completed" ? " and closed" : ""}`,
         [A.previousStatus]: "", [A.newStatus]: status,
         [A.internalNotesSnapshot]: internal,
         [A.problemSnapshot]: description
@@ -702,7 +796,7 @@ const Tickets = (() => {
   }
 
   return {
-    init, refresh, renderRules, statusOf, formatId: formatTicketId,
+    init, refresh, renderRules, statusOf, queueOf, formatId: formatTicketId,
     get all(){ return tickets; }
   };
 })();
