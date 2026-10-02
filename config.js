@@ -1,4 +1,4 @@
-(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["config.js"] = "2026.10.02-2";
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["config.js"] = "2026.10.02-3";
 /* ============================================================
    config.js — every environment value and SharePoint column name
    lives here. If a live field check shows a different internal
@@ -89,7 +89,7 @@ const REQ_FIELDS = {
   source: "Source",
   requesterName: "RequesterName",
   phoneNumber: "PhoneNumber",
-  queue: "Queue"                          // Single line of text — blank = Dashboard inquiries; SPECIAL_QUEUE = Special Project Inquiries tab
+  queue: "Queue"                          // Single line of text — blank = Dashboard inquiries; SPECIAL_QUEUE = Special Projects Inquiries tab
 };
 
 /* Audit Log list — app-wide record of everything people do in the portal */
@@ -160,7 +160,7 @@ const NO_ACTION_STATUS = "No Action Required";
 /* Inquiries set aside for a special project (e.g. a software transition). They get
    their own tab so they don't crowd the Dashboard. Stored in the Requests list's
    Queue column. */
-const SPECIAL_QUEUE = "Special Project Inquiries";
+const SPECIAL_QUEUE = "Special Projects Inquiries";
 
 const AUDIT_AREAS = {
   inquiry: "Inquiry",
