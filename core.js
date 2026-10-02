@@ -119,6 +119,7 @@ async function startSession(account){
 
   App.role = me[TEAM_FIELDS.role] || "Staff";
   App.isAdmin = App.role === "Admin";
+  App.myTeam = TEAMS.includes(me[TEAM_FIELDS.team]) ? me[TEAM_FIELDS.team] : null;
   document.querySelectorAll("[data-admin-only]").forEach(el => { el.hidden = !App.isAdmin; });
 
   document.getElementById("userBox").innerHTML = `
@@ -155,8 +156,8 @@ async function startSession(account){
 }
 
 async function loadTeamAndFindMe(){
-  App.team = await spGetAll(CONFIG.lists.team,
-    `$select=Id,${TEAM_FIELDS.title},${TEAM_FIELDS.role}&$top=500`);
+  // No $select: a missing optional column (e.g. Team) must never block sign-in.
+  App.team = await spGetAll(CONFIG.lists.team, "$top=500");
   if(!App.user.key) return null;
   return App.team.find(m => localPart(m[TEAM_FIELDS.title]) === App.user.key) || null;
 }
