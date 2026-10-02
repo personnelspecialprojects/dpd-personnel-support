@@ -25,12 +25,13 @@ const SetupCheck = (() => {
           AL = ALERT_FIELDS, M = TEAM_FIELDS, W = WORK_FIELDS, WL = WORKLOG_FIELDS;
     return [
       { list: CONFIG.lists.team, purpose: "who can sign in", fields: [
-        [M.role, "Choice", { choices: ["Staff", "Admin"] }]
+        [M.role, "Choice", { choices: ["Staff", "Admin"] }], [M.team, "Choice", { choices: TEAMS }]
       ]},
       { list: CONFIG.lists.activityTypes, purpose: "the activities on the Dashboard", fields: [
         [T.category, "Text"], [T.inputType, "Choice", { choices: INPUT_TYPES }], [T.inputLabel, "Text"],
         [T.duplicateWindowDays, "Number"], [T.sortOrder, "Number"], [T.description, "Text"],
-        [T.active, "Boolean"], [T.checklistSteps, "Note", { json: true }]
+        [T.active, "Boolean"], [T.checklistSteps, "Note", { json: true }],
+        [T.team, "Choice", { choices: [...TEAMS, TEAM_BOTH] }]
       ]},
       { list: CONFIG.lists.activityLog, purpose: "every logged activity", fields: [
         [F.activityTypeId, "Number", { index: true }], [F.activityName, "Text"], [F.category, "Text"],
