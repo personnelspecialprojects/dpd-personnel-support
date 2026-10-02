@@ -1,4 +1,4 @@
-(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["tickets.js"] = "2026.10.02-2";
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["tickets.js"] = "2026.10.02-3";
 /* ============================================================
    tickets.js — the Inquiries tab, Audit Log tab, and aging alert
    rules. Ported from the Secondary Employment Support Portal,
@@ -274,7 +274,7 @@ const Tickets = (() => {
   function isOpenStatus(s){ return s === "New" || s === "In Progress"; }
 
   /* The two inquiry lists share one implementation. "main" is the Dashboard panel;
-     "special" is the Special Project Inquiries tab. An inquiry belongs to one by its Queue value. */
+     "special" is the Special Projects Inquiries tab. An inquiry belongs to one by its Queue value. */
   const LIST_UI = {
     main: { body: "ticketsBody", filter: "filterStatus", search: "searchBox", openOnly: "hideClosedCheckbox",
             empty: "emptyState", headCount: "inqOpenCount", badge: "openInquiryBadge", table: "ticketsTable" },
@@ -343,7 +343,7 @@ const Tickets = (() => {
     empty.innerHTML = document.getElementById(ui.openOnly).checked && !document.getElementById(ui.filter).value
       && !document.getElementById(ui.search).value
       ? (key === "special"
-          ? `<p><strong>No open ${escapeHtml(SPECIAL_QUEUE)}.</strong></p><p class="small">Use the <strong>Special Project</strong> button on a Dashboard inquiry to move it here.</p>`
+          ? `<p><strong>No open ${escapeHtml(SPECIAL_QUEUE)}.</strong></p><p class="small">Use the <strong>Special Projects</strong> button on a Dashboard inquiry to move it here.</p>`
           : "<p><strong>All caught up.</strong> No open inquiries.</p>")
       : "<p>No inquiries match these filters.</p>";
 
@@ -353,7 +353,7 @@ const Tickets = (() => {
       const who = t[R.requesterName] || t[R.email] || (t[R.phoneNumber] ? `Phone: ${t[R.phoneNumber]}` : "");
       const moveBtn = key === "special"
         ? `<button type="button" class="btn-noaction" data-move="${t.Id}" data-to="main" title="Move back to the Dashboard inquiries">Move back</button>`
-        : `<button type="button" class="btn-noaction btn-special" data-move="${t.Id}" data-to="special" title="Move to the ${escapeHtml(SPECIAL_QUEUE)} tab">Special Project</button>`;
+        : `<button type="button" class="btn-noaction btn-special" data-move="${t.Id}" data-to="special" title="Move to the ${escapeHtml(SPECIAL_QUEUE)} tab">Special Projects</button>`;
       return `<tr data-ticket-id="${t.Id}" class="${color ? "alert-row" : ""}" ${color ? `style="--alert-color:${escapeHtml(color)}"` : ""} tabindex="0">
         <td class="nowrap muted">${formatTicketId(t.Id)}</td>
         <td>
@@ -391,7 +391,7 @@ const Tickets = (() => {
     });
   }
 
-  /* ---------- Special Project Inquiries: move between tabs (one click, with Undo) ---------- */
+  /* ---------- Special Projects Inquiries: move between tabs (one click, with Undo) ---------- */
 
   const QUEUE_LABEL = { main: "Inquiries", special: SPECIAL_QUEUE };
 
