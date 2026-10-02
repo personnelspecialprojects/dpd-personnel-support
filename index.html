@@ -80,9 +80,12 @@
       <section class="dash-panel" aria-labelledby="logHeading">
         <div class="dash-head">
           <div class="dash-title"><h2 id="logHeading">Log completed work</h2></div>
-          <span id="todaySummary" class="muted small"></span>
+          <div class="segmented team-toggle" id="teamToggle" role="group" aria-label="Show activities for team"></div>
         </div>
-        <p class="how">Type the number and press Enter. To log several at once, separate them with spaces or commas.</p>
+        <div class="how">
+          <div id="todaySummary" class="today-line"></div>
+          Type the number and press Enter. To log several at once, separate them with spaces or commas.
+        </div>
         <div class="dash-scroll">
           <div id="board"></div>
           <details class="mine" id="mineDetails">
@@ -119,6 +122,7 @@
   <div class="view" id="reportsView">
     <section class="panel">
       <div class="toolbar">
+        <select id="rpTeam" aria-label="Team"></select>
         <select id="rpPreset" aria-label="Date range">
           <option value="today">Today</option>
           <option value="thisWeek">This week</option>
@@ -225,10 +229,11 @@
 
     <section class="panel">
       <h3>Team access</h3>
-      <p class="muted small">People on this list can sign in. Matching ignores the domain, so a dallaspolice.gov or dallascityhall.com address covers both. Admins see this tab.</p>
+      <p class="muted small">People on this list can sign in. Matching ignores the domain, so a dallaspolice.gov or dallascityhall.com address covers both. Admins see this tab. A person's team sets which activities their Dashboard opens on; they can still switch.</p>
       <div class="toolbar">
         <input type="email" id="newStaffEmail" placeholder="firstname.lastname@dallaspolice.gov" class="grow-input" aria-label="Email address">
         <select id="newStaffRole" aria-label="Role"><option value="Staff">Staff</option><option value="Admin">Admin</option></select>
+        <select id="newStaffTeam" aria-label="Team"></select>
         <button type="button" class="btn btn-navy" id="addStaffBtn">Add person</button>
       </div>
       <div id="staffSaveMsg" class="save-msg"></div>
@@ -365,6 +370,13 @@
           <input type="text" id="atCategory" list="categoryOptions" placeholder="e.g. Separations">
           <datalist id="categoryOptions"></datalist>
           <div class="hint">Pick an existing category or type a new one.</div>
+        </div>
+      </div>
+      <div class="field-row">
+        <label for="atTeam">Team</label>
+        <div>
+          <select id="atTeam"></select>
+          <div class="hint">Which team's Dashboard shows this activity. "Both" shows it to everyone.</div>
         </div>
       </div>
       <div class="field-row">
