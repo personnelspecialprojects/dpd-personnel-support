@@ -1,3 +1,4 @@
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["activity.js"] = "2026.10.02-2";
 /* ============================================================
    activity.js — the Log Activity tab.
    One row per active activity type. Type an ID, press Enter.
