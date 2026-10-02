@@ -10,11 +10,13 @@ const Activity = (() => {
   let allTypes = [];
   let recent = [];          // every entry from the last CONFIG.recentDays days (whole team)
   let boardSignature = "";
+  let currentTeam = null;    // which team's activities the board shows (SRU / PSU)
   const busy = new Set();
 
   /* ---------- loading ---------- */
 
   async function init(){
+    initTeam();
     await Promise.all([loadTypes(), loadRecent()]);
     buildBoard();
     renderCounts();
@@ -120,11 +122,54 @@ const Activity = (() => {
 
   function isMine(e){ return localPart(e[F.staffEmail]) === App.user.key; }
 
+  /* ---------- team toggle (SRU / PSU) ---------- */
+
+  /* An activity's team; blank or unrecognized counts as shared by both teams. */
+  function teamOf(t){
+    const v = t && t[T.team];
+    return TEAMS.includes(v) ? v : TEAM_BOTH;
+  }
+
+  function showsOnTeam(t, team){
+    const v = teamOf(t);
+    return v === TEAM_BOTH || v === team;
+  }
+
+  function teamStorageKey(){ return `ps-dashboard-team:${App.user ? App.user.key : ""}`; }
+
+  /* Last choice on this browser, else the person's team from the roster, else the first team. */
+  function initTeam(){
+    let saved = null;
+    try{ saved = localStorage.getItem(teamStorageKey()); }catch(_){ /* storage blocked: fine */ }
+    currentTeam = TEAMS.includes(saved) ? saved : (App.myTeam || TEAMS[0]);
+    renderTeamToggle();
+  }
+
+  function renderTeamToggle(){
+    const wrap = document.getElementById("teamToggle");
+    if(!wrap) return;
+    wrap.innerHTML = TEAMS.map(tm => `<button type="button" data-team="${escapeHtml(tm)}"
+      class="${tm === currentTeam ? "active" : ""}" aria-pressed="${tm === currentTeam}">${escapeHtml(tm)}</button>`).join("");
+    wrap.querySelectorAll("[data-team]").forEach(b => b.addEventListener("click", () => setTeam(b.dataset.team)));
+  }
+
+  function setTeam(team){
+    if(!TEAMS.includes(team) || team === currentTeam) return;
+    currentTeam = team;
+    try{ localStorage.setItem(teamStorageKey(), team); }catch(_){}
+    renderTeamToggle();
+    buildBoard();
+    renderCounts();
+    const first = document.querySelector("#board .task-input");
+    if(first) first.focus();
+  }
+
   /* ---------- board ---------- */
 
   function buildBoard(){
-    const types = allTypes.filter(isActive);
-    const sig = JSON.stringify(sortedTypes(types).map(t =>
+    const anyActive = allTypes.some(isActive);
+    const types = allTypes.filter(t => isActive(t) && showsOnTeam(t, currentTeam));
+    const sig = currentTeam + JSON.stringify(sortedTypes(types).map(t =>
       [t.Id, t.Title, t[T.category], t[T.inputType], t[T.inputLabel], t[T.description], t[T.sortOrder], hasChecklist(t)]));
     if(sig === boardSignature) return;
     boardSignature = sig;
@@ -138,7 +183,7 @@ const Activity = (() => {
 
     if(!types.length){
       board.innerHTML = `<div class="empty-block">
-        <p><strong>No activities are set up yet.</strong></p>
+        <p><strong>${anyActive ? `No ${escapeHtml(currentTeam)} activities are set up yet.` : "No activities are set up yet."}</strong></p>
         <p>${App.isAdmin
           ? 'Add the tasks your team completes in the <a href="#" id="goAdminLink">Admin tab</a>. Each one becomes a row here.'
           : `Ask ${escapeHtml(CONFIG.adminContact)} to add your team's tasks.`}</p></div>`;
@@ -749,6 +794,7 @@ const Activity = (() => {
   return {
     init, refresh, reloadTypes, voidEntries, renderCounts, ingest, markVoided,
     inputMode, inputLabel, windowDays, groupByCategory, sortedTypes, templateSteps, hasChecklist, qty,
+    teamOf, get currentTeam(){ return currentTeam; },
     get types(){ return allTypes; }
   };
 })();
