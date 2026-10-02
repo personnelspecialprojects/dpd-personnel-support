@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Personnel Support</title>
-<link rel="stylesheet" href="styles.css?v=2026.10.02-2">
+<link rel="stylesheet" href="styles.css?v=2026.10.02-3">
 <script src="https://alcdn.msauth.net/browser/2.35.0/js/msal-browser.min.js"
   onerror="this.onerror=null;var s=document.createElement('script');s.src='https://alcdn.msftauth.net/browser/2.35.0/js/msal-browser.min.js';document.head.appendChild(s);"></script>
 </head>
@@ -40,7 +40,7 @@
 <main id="mainApp" hidden>
   <nav class="tabs" role="tablist">
     <button type="button" class="tab active" role="tab" aria-selected="true" data-view="dashView">Dashboard <span id="openInquiryBadge" class="tab-badge" hidden></span></button>
-    <button type="button" class="tab" role="tab" aria-selected="false" data-view="specialView">Special Project Inquiries <span id="specialBadge" class="tab-badge" hidden></span></button>
+    <button type="button" class="tab" role="tab" aria-selected="false" data-view="specialView">Special Projects Inquiries <span id="specialBadge" class="tab-badge" hidden></span></button>
     <button type="button" class="tab" role="tab" aria-selected="false" data-view="workView">Tracked work <span id="myWorkBadge" class="tab-badge" hidden></span></button>
     <button type="button" class="tab" role="tab" aria-selected="false" data-view="reportsView">Reports</button>
     <button type="button" class="tab" role="tab" aria-selected="false" data-view="auditView">Audit log</button>
@@ -105,7 +105,7 @@
     <section class="panel special-panel" aria-labelledby="spHeading">
       <div class="dash-head">
         <div class="dash-title">
-          <h2 id="spHeading">Special Project Inquiries</h2>
+          <h2 id="spHeading">Special Projects Inquiries</h2>
           <span id="spOpenCount" class="head-count"></span>
         </div>
         <button type="button" class="btn btn-ghost btn-sm" id="spOpenManualEntryBtn">New manual inquiry</button>
@@ -339,7 +339,7 @@
       </div>
     </div>
     <div class="modal-footer">
-      <button type="button" class="btn btn-ghost" id="mQueueBtn">Move to Special Project Inquiries</button>
+      <button type="button" class="btn btn-ghost" id="mQueueBtn">Move to Special Projects Inquiries</button>
       <button type="button" class="btn btn-ghost" id="mNoActionBtn" title="Close without a response. It doesn't count as a resolved inquiry.">No Action Required</button>
       <div class="save-msg" id="saveMsg"></div>
       <button type="button" class="btn btn-ghost" id="cancelBtn">Cancel</button>
@@ -490,18 +490,18 @@
 <script>
   /* Release stamp. Every .js file carries the same stamp; core.js warns if any differ
      (an old cached or un-uploaded file). Bump it in ALL files for each release. */
-  window.PS_PAGE_VERSION = "2026.10.02-2";
+  window.PS_PAGE_VERSION = "2026.10.02-3";
   window.PS_FILE_VERSIONS = {};
 </script>
-<script src="config.js?v=2026.10.02-2"></script>
-<script src="core.js?v=2026.10.02-2"></script>
-<script src="activity.js?v=2026.10.02-2"></script>
-<script src="work.js?v=2026.10.02-2"></script>
-<script src="tickets.js?v=2026.10.02-2"></script>
-<script src="reports.js?v=2026.10.02-2"></script>
-<script src="admin.js?v=2026.10.02-2"></script>
-<script src="audit.js?v=2026.10.02-2"></script>
-<script src="setup-check.js?v=2026.10.02-2"></script>
+<script src="config.js?v=2026.10.02-3"></script>
+<script src="core.js?v=2026.10.02-3"></script>
+<script src="activity.js?v=2026.10.02-3"></script>
+<script src="work.js?v=2026.10.02-3"></script>
+<script src="tickets.js?v=2026.10.02-3"></script>
+<script src="reports.js?v=2026.10.02-3"></script>
+<script src="admin.js?v=2026.10.02-3"></script>
+<script src="audit.js?v=2026.10.02-3"></script>
+<script src="setup-check.js?v=2026.10.02-3"></script>
 <script>boot();</script>
 </body>
 </html>
