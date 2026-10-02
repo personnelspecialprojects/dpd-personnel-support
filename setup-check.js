@@ -1,4 +1,4 @@
-(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["setup-check.js"] = "2026.10.02-2";
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["setup-check.js"] = "2026.10.02-3";
 /* ============================================================
    setup-check.js — Admin → "Check SharePoint setup".
    Read-only. Compares every list and column the app expects
