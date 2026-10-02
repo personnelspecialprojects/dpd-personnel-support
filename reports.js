@@ -29,6 +29,10 @@ const Reports = (() => {
       document.getElementById("rpPreset").value = "custom";
     }));
     document.getElementById("rpRunBtn").addEventListener("click", run);
+    const teamSel = document.getElementById("rpTeam");
+    teamSel.innerHTML = `<option value="">All teams</option>` +
+      TEAMS.map(tm => `<option value="${escapeHtml(tm)}">${escapeHtml(tm)}</option>`).join("");
+    teamSel.addEventListener("change", () => { if(range) render(); });
     document.getElementById("rpExportSummaryBtn").addEventListener("click", exportSummary);
     document.getElementById("rpExportEntriesBtn").addEventListener("click", exportEntries);
     document.getElementById("lookupBtn").addEventListener("click", lookup);
@@ -85,7 +89,25 @@ const Reports = (() => {
     }
   }
 
+  function selectedTeam(){ return document.getElementById("rpTeam").value; }
+
+  /* Entries for the chosen team: its own activities plus shared ("Both") ones.
+     Activities deleted from the list count as shared. */
+  function teamEntries(){
+    const team = selectedTeam();
+    if(!team) return entries;
+    const byId = {};
+    Activity.types.forEach(t => { byId[t.Id] = t; });
+    return entries.filter(e => {
+      const t = byId[e[F.activityTypeId]];
+      const tm = t ? Activity.teamOf(t) : TEAM_BOTH;
+      return tm === team || tm === TEAM_BOTH;
+    });
+  }
+
   function resolvedInRange(){
+    // Inquiries are shared by the whole Personnel Support team, so they show only under "All teams".
+    if(selectedTeam()) return [];
     return Tickets.all.filter(t => {
       if(Tickets.statusOf(t) !== "Completed" || !t[R.completedOn]) return false;
       const d = new Date(t[R.completedOn]);
@@ -103,7 +125,7 @@ const Reports = (() => {
       const r = cells[row] || (cells[row] = {});
       r[person] = (r[person] || 0) + n;
     };
-    entries.forEach(e => {
+    teamEntries().forEach(e => {
       const key = String(e[F.activityTypeId]);
       names[key] = names[key] || { name: e[F.activityName], category: e[F.category] };
       bump(key, e[F.staffName] || "Unknown", Activity.qty(e));   // Count activities add their number
@@ -144,11 +166,12 @@ const Reports = (() => {
       .map(t => (new Date(t[R.completedOn]) - new Date(t[R.receivedOn])) / 86400000);
     const avg = days.length ? (days.reduce((a, b) => a + b, 0) / days.length).toFixed(1) : null;
 
-    const totalItems = entries.reduce((a, e) => a + Activity.qty(e), 0);
+    const shown = teamEntries();
+    const totalItems = shown.reduce((a, e) => a + Activity.qty(e), 0);
     document.getElementById("rpSummary").innerHTML =
       `<strong>${totalItems.toLocaleString()}</strong> ${totalItems === 1 ? "item" : "items"} of work logged and ` +
       `<strong>${resolved.length}</strong> ${resolved.length === 1 ? "inquiry" : "inquiries"} resolved, ` +
-      `${fromLabel} to ${toLabel}` +
+      `${fromLabel} to ${toLabel}${selectedTeam() ? `, ${escapeHtml(selectedTeam())} activities plus shared ones (inquiries show under All teams)` : ""}` +
       `${noAction ? ` (plus ${noAction} no-action ${noAction === 1 ? "email" : "emails"} closed without a response)` : ""}. ` +
       `${avg !== null ? `Inquiries took ${avg} days on average to resolve. ` : ""}` +
       `${plural(open, "inquiry", "inquiries")} open right now` +
@@ -189,7 +212,8 @@ const Reports = (() => {
   }
 
   function rangeSlug(){
-    return `${toDateInput(range.from)}_to_${toDateInput(addDays(range.to, -1))}`;
+    const team = selectedTeam();
+    return `${team ? team + "_" : ""}${toDateInput(range.from)}_to_${toDateInput(addDays(range.to, -1))}`;
   }
 
   function exportSummary(){
@@ -207,7 +231,7 @@ const Reports = (() => {
   function exportEntries(){
     if(!range){ toast("Run a report first.", { type: "error" }); return; }
     const rows = [["Logged At", "Category", "Activity", "Identifier", "Quantity", "Staff Member", "Staff Email"]];
-    entries
+    teamEntries()
       .slice()
       .sort((a, b) => new Date(a[F.loggedAt]) - new Date(b[F.loggedAt]))
       .forEach(e => rows.push([formatDate(e[F.loggedAt]), e[F.category], e[F.activityName], e[F.identifier], Activity.qty(e), e[F.staffName], e[F.staffEmail]]));
