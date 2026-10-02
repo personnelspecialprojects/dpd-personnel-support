@@ -1,3 +1,4 @@
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["admin.js"] = "2026.10.02-1";
 /* ============================================================
    admin.js — Admin tab (visible to Role = Admin only).
    Activities: add, edit, reorder, turn on/off. Activities are
@@ -29,6 +30,11 @@ const Admin = (() => {
     on("newStaffEmail", "keydown", e => { if(e.key === "Enter"){ e.preventDefault(); addMember(); } });
     on("showInactiveTypes", "change", renderTypes);
     on("atAddStepBtn", "click", addTplStep);
+    document.getElementById("atTeam").innerHTML =
+      TEAMS.map(tm => `<option value="${escapeHtml(tm)}">${escapeHtml(tm)}</option>`).join("") +
+      `<option value="${TEAM_BOTH}">Both teams</option>`;
+    document.getElementById("newStaffTeam").innerHTML = `<option value="">No team</option>` +
+      TEAMS.map(tm => `<option value="${escapeHtml(tm)}">${escapeHtml(tm)}</option>`).join("");
     on("atNewStep", "keydown", e => { if(e.key === "Enter"){ e.preventDefault(); addTplStep(); } });
   }
 
@@ -45,9 +51,9 @@ const Admin = (() => {
     const groups = Activity.groupByCategory(types);
     wrap.innerHTML = `
       <div class="table-scroll"><table class="plain types">
-        <thead><tr><th>Order</th><th>Activity</th><th>Asks for</th><th>Checklist</th><th>Duplicate check</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>Order</th><th>Activity</th><th>Team</th><th>Asks for</th><th>Checklist</th><th>Duplicate check</th><th>Status</th><th></th></tr></thead>
         <tbody>${groups.map(g => `
-          <tr class="grp"><th colspan="7">${escapeHtml(g.name)}</th></tr>
+          <tr class="grp"><th colspan="8">${escapeHtml(g.name)}</th></tr>
           ${g.types.map(t => {
             const active = t[T.active] !== false;
             const mode = Activity.inputMode(t);
@@ -55,6 +61,7 @@ const Admin = (() => {
             return `<tr class="static${active ? "" : " inactive"}">
               <td class="num">${t[T.sortOrder] ?? ""}</td>
               <td><strong>${escapeHtml(t.Title || "")}</strong>${t[T.description] ? `<div class="muted small">${escapeHtml(t[T.description])}</div>` : ""}</td>
+              <td><span class="team-chip">${escapeHtml(Activity.teamOf(t))}</span></td>
               <td>${mode === "click" ? "Nothing (one click)" : mode === "count" ? `A count (${escapeHtml(Activity.inputLabel(t))})` : escapeHtml(Activity.inputLabel(t))}</td>
               <td>${Activity.hasChecklist(t) ? plural(Activity.templateSteps(t).length, "step") : "—"}</td>
               <td>${Activity.hasChecklist(t) ? "Open items" : (mode === "click" || mode === "count") ? "—" : days > 0 ? `Last ${plural(days, "day")}` : "Off"}</td>
@@ -79,6 +86,7 @@ const Admin = (() => {
     $("typeModalTitle").textContent = t ? "Edit activity" : "Add activity";
     $("atName").value = t ? t.Title || "" : "";
     $("atCategory").value = t ? t[T.category] || "" : "";
+    $("atTeam").value = t ? Activity.teamOf(t) : (Activity.currentTeam || TEAMS[0]);
     $("atInputType").value = t ? (INPUT_TYPES.includes(t[T.inputType]) ? t[T.inputType] : "Employee Number") : "Employee Number";
     $("atInputLabel").value = t ? t[T.inputLabel] || "" : "";
     $("atDupDays").value = t
@@ -142,6 +150,7 @@ const Admin = (() => {
     const body = {
       Title: name,
       [T.category]: category || "General",
+      [T.team]: $("atTeam").value,
       [T.inputType]: inputType,
       [T.inputLabel]: inputType === "Click Only" ? "" : label,
       [T.duplicateWindowDays]: (inputType === "Click Only" || inputType === "Count") ? 0 : Math.round(dup),
@@ -223,12 +232,12 @@ const Admin = (() => {
       return st.length ? st.map((x, i) => `${i + 1}. ${x.text}${x.external ? " [other office]" : ""}`).join("\n") : "(none)";
     };
     const labels = {
-      Title: "name", [T.category]: "category", [T.inputType]: "staff enter", [T.inputLabel]: "box label",
+      Title: "name", [T.category]: "category", [T.team]: "team", [T.inputType]: "staff enter", [T.inputLabel]: "box label",
       [T.duplicateWindowDays]: "duplicate check days", [T.sortOrder]: "order", [T.description]: "helper text"
     };
     if(!before){
       const steps = Activity.templateSteps(body).length;
-      audit(AUDIT_AREAS.admin, `Added activity "${body.Title}" (${body[T.category]}, ${body[T.inputType]}${steps ? `, checklist with ${plural(steps, "step")}` : ""})`, {
+      audit(AUDIT_AREAS.admin, `Added activity "${body.Title}" (${body[T.team]}, ${body[T.category]}, ${body[T.inputType]}${steps ? `, checklist with ${plural(steps, "step")}` : ""})`, {
         recordId: id, details: steps ? `Checklist:\n${describeSteps(body[T.checklistSteps])}` : ""
       });
       return;
@@ -266,7 +275,7 @@ const Admin = (() => {
   /* ---------- team access ---------- */
 
   async function reloadTeam(){
-    App.team = await spGetAll(CONFIG.lists.team, `$select=Id,${M.title},${M.role}&$top=500`);
+    App.team = await spGetAll(CONFIG.lists.team, "$top=500");
     renderTeam();
   }
 
@@ -280,6 +289,10 @@ const Admin = (() => {
       const role = m[M.role] || "Staff";
       return `<div class="list-item">
         <span class="grow">${escapeHtml(m[M.title] || "")}${isMe ? ' <span class="muted small">(you)</span>' : ""}</span>
+        <select class="member-team" data-team-for="${m.Id}" aria-label="Team for ${escapeHtml(m[M.title] || "")}">
+          <option value="">No team</option>
+          ${TEAMS.map(tm => `<option value="${escapeHtml(tm)}"${m[M.team] === tm ? " selected" : ""}>${escapeHtml(tm)}</option>`).join("")}
+        </select>
         <span class="role-chip${role === "Admin" ? " admin" : ""}">${escapeHtml(role)}</span>
         ${isMe ? "" : `
           <button type="button" class="link-btn" data-role="${m.Id}">${role === "Admin" ? "Make staff" : "Make admin"}</button>
@@ -287,6 +300,7 @@ const Admin = (() => {
       </div>`;
     }).join("");
     wrap.querySelectorAll("[data-role]").forEach(b => b.addEventListener("click", () => toggleRole(Number(b.dataset.role))));
+    wrap.querySelectorAll("[data-team-for]").forEach(sel => sel.addEventListener("change", () => setMemberTeam(Number(sel.dataset.teamFor), sel.value, sel)));
     wrap.querySelectorAll("[data-remove]").forEach(b => b.addEventListener("click", () => removeMember(Number(b.dataset.remove))));
   }
 
@@ -300,14 +314,15 @@ const Admin = (() => {
     const input = document.getElementById("newStaffEmail");
     const email = input.value.trim().toLowerCase();
     const role = document.getElementById("newStaffRole").value;
+    const team = document.getElementById("newStaffTeam").value;
     if(!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ setStaffMsg("Enter a full email address.", "err"); return; }
     if(App.team.some(m => localPart(m[M.title]) === localPart(email))){ setStaffMsg("That person is already on the roster.", "err"); return; }
     const btn = document.getElementById("addStaffBtn");
     btn.disabled = true;
     setStaffMsg("Adding...");
     try{
-      const created = await spCreate(CONFIG.lists.team, { [M.title]: email, [M.role]: role });
-      audit(AUDIT_AREAS.admin, `Gave portal access to ${email} as ${role}`, { recordId: created.Id });
+      const created = await spCreate(CONFIG.lists.team, { [M.title]: email, [M.role]: role, ...(team ? { [M.team]: team } : {}) });
+      audit(AUDIT_AREAS.admin, `Gave portal access to ${email} as ${role}${team ? `, team ${team}` : ""}`, { recordId: created.Id });
       input.value = "";
       setStaffMsg(`Added ${email}.`, "ok");
       await reloadTeam();
@@ -316,6 +331,25 @@ const Admin = (() => {
       setStaffMsg(`Not added: ${err.message}`, "err");
     }finally{
       btn.disabled = false;
+    }
+  }
+
+  async function setMemberTeam(id, team, sel){
+    const m = App.team.find(x => x.Id === id);
+    if(!m) return;
+    const before = m[M.team] || "";
+    sel.disabled = true;
+    try{
+      await spUpdate(CONFIG.lists.team, id, { [M.team]: team || null });
+      m[M.team] = team || null;
+      audit(AUDIT_AREAS.admin, `Set ${m[M.title]}'s team: ${before || "none"} → ${team || "none"}`, { recordId: id });
+      toast(`${m[M.title]} is now ${team ? `on ${team}` : "not assigned to a team"}.`, { type: "success" });
+    }catch(err){
+      console.error(err);
+      sel.value = before;
+      toast(`Team wasn't changed: ${err.message}. If the Team Members list has no Team column yet, run the setup check.`, { type: "error" });
+    }finally{
+      sel.disabled = false;
     }
   }
 
