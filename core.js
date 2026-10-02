@@ -1,3 +1,4 @@
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["core.js"] = "2026.10.02-2";
 /* ============================================================
    core.js — sign-in, SharePoint REST helpers, shared utilities,
    tab routing, polling, and boot. Loaded before the feature files.
@@ -124,7 +125,7 @@ async function startSession(account){
 
   document.getElementById("userBox").innerHTML = `
     <div class="user-name">${escapeHtml(App.user.name)}${App.isAdmin ? ' <span class="role-tag">Admin</span>' : ""}</div>
-    <div class="user-meta"><span id="syncLabel"></span><button id="signOutBtn" type="button">Sign out</button></div>`;
+    <div class="user-meta"><span id="syncLabel"></span><span class="ver" title="Release version">v${escapeHtml(window.PS_PAGE_VERSION || "?")}</span><button id="signOutBtn" type="button">Sign out</button></div>`;
   document.getElementById("signOutBtn").addEventListener("click", signOut);
 
   showGate(null);
@@ -511,7 +512,32 @@ function closeOverlay(id){ document.getElementById(id).classList.remove("active"
 
 /* ---------------- Boot ---------------- */
 
+/* ---------------- Version check ---------------- */
+
+const PS_EXPECTED_FILES = ["config.js", "core.js", "activity.js", "work.js", "tickets.js",
+  "reports.js", "admin.js", "audit.js", "setup-check.js"];
+
+/* Files whose release stamp doesn't match the page (old cached copy, or not uploaded). */
+function outdatedFiles(){
+  const page = window.PS_PAGE_VERSION;
+  const have = window.PS_FILE_VERSIONS || {};
+  if(!page) return [];
+  return PS_EXPECTED_FILES.filter(f => have[f] !== page);
+}
+
+function checkVersions(){
+  const bad = outdatedFiles();
+  if(!bad.length) return;
+  console.warn("Out-of-date files:", bad, "page version", window.PS_PAGE_VERSION, window.PS_FILE_VERSIONS);
+  const bar = document.getElementById("versionBanner");
+  bar.innerHTML = `<strong>Part of the portal is out of date:</strong> ${bad.map(escapeHtml).join(", ")}. ` +
+    `Press <kbd>Ctrl</kbd>+<kbd>F5</kbd> to reload. If this message stays, ` +
+    `let ${escapeHtml(CONFIG.adminContact)} know: the latest ${bad.length === 1 ? "copy of that file needs" : "copies of those files need"} to be uploaded to GitHub.`;
+  bar.hidden = false;
+}
+
 function boot(){
+  checkVersions();
   document.getElementById("signInBtn").addEventListener("click", signIn);
   document.getElementById("notAuthSignOutBtn").addEventListener("click", signOut);
   document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => switchTab(t.dataset.view)));
