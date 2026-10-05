@@ -1,4 +1,4 @@
-(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["roster.js"] = "2026.10.05-1";
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["roster.js"] = "2026.10.05-2";
 /* ============================================================
    roster.js — 2.0 employee roster.
 
@@ -30,8 +30,12 @@ const Roster = (() => {
     return s.replace(/^0+(?=\d)/, "");
   }
 
+  let byBadge = new Map();
+  function normBadge(v){ return String(v ?? "").trim().toUpperCase(); }
+
   function index(){
     byId = new Map(employees.map(e => [normId(e[E.employeeId]), e]));
+    byBadge = new Map(employees.filter(e => e[E.badge]).map(e => [normBadge(e[E.badge]), e]));
   }
 
   function ready(force){
@@ -44,7 +48,8 @@ const Roster = (() => {
     return loadPromise.catch(() => employees);
   }
 
-  function find(id){ return byId.get(normId(id)) || null; }
+  /* Employee number first; badge numbers are accepted too (some files use the badge as the ID). */
+  function find(id){ return byId.get(normId(id)) || byBadge.get(normBadge(id)) || null; }
   function count(){ return employees.length; }
 
   function fullName(first, last){
@@ -91,12 +96,12 @@ const Roster = (() => {
     }
     const hits = employees.filter(e => {
       if(!showInactive && e[E.active] === false) return false;
-      return `${e[E.employeeId]} ${e[E.title]} ${e[E.firstName]} ${e[E.lastName]}`.toLowerCase().includes(q);
+      return `${e[E.employeeId]} ${e[E.badge] || ""} ${e[E.title]} ${e[E.firstName]} ${e[E.lastName]}`.toLowerCase().includes(q);
     }).slice(0, 60);
     box.innerHTML = hits.length ? `<table class="data"><tbody>${hits.map(e => `
       <tr data-emp="${escapeHtml(e[E.employeeId])}" tabindex="0" class="${e[E.active] === false ? "case-closed" : ""}">
         <td class="nowrap mine-id">${escapeHtml(e[E.employeeId])}</td>
-        <td><div class="inq-title">${escapeHtml(e[E.title] || "")}</div><div class="muted small">${escapeHtml([e[E.jobTitle], e[E.division]].filter(Boolean).join(" · "))}</div></td>
+        <td><div class="inq-title">${escapeHtml(e[E.title] || "")}</div><div class="muted small">${escapeHtml([e[E.rank], e[E.division], e[E.badge] ? `Badge ${e[E.badge]}` : ""].filter(Boolean).join(" · "))}</div></td>
         <td class="small">${e[E.active] === false ? "Inactive" : ""}</td>
       </tr>`).join("")}</tbody></table>` : `<p class="muted">No one matches.</p>`;
     box.querySelectorAll("tr[data-emp]").forEach(tr => {
@@ -113,17 +118,17 @@ const Roster = (() => {
   }
 
   async function renderDetail(id){
-    currentEmpId = normId(id);
-    const wrap = document.getElementById("empDetail");
     const emp = find(id);
+    currentEmpId = emp ? normId(emp[E.employeeId]) : normId(id);
+    const wrap = document.getElementById("empDetail");
     const procs = Activity.sortedTypes(Activity.types.filter(t => Cases.isEmployeeProcess(t) && t[TYPE_FIELDS.active] !== false));
     wrap.hidden = false;
     wrap.innerHTML = `
       <div class="emp-head">
         <div>
           <h2>${escapeHtml(emp ? emp[E.title] : "Not in roster")}</h2>
-          <div class="muted">${escapeHtml(currentEmpId)}${emp ? escapeHtml([emp[E.jobTitle], emp[E.division]].filter(Boolean).map(x => " · " + x).join("")) : ""}</div>
-          ${emp ? `<div class="muted small">Supervisor: ${escapeHtml(emp[E.supervisor] || "—")}${emp[E.email] ? ` · ${escapeHtml(emp[E.email])}` : ""} · ${emp[E.active] === false ? "<strong>Inactive</strong>" : "Active"} · Source: ${escapeHtml(emp[E.source] || "")}</div>` : ""}
+          <div class="muted">Emp# ${escapeHtml(emp ? normId(emp[E.employeeId]) : currentEmpId)}${emp ? escapeHtml([emp[E.badge] ? `Badge ${emp[E.badge]}` : "", emp[E.rank], emp[E.division]].filter(Boolean).map(x => " · " + x).join("")) : ""}</div>
+          ${emp ? `<div class="muted small">Supervisor: ${escapeHtml(emp[E.supervisor] || "—")}${emp[E.hireDate] ? ` · Hire date (adj. service): ${escapeHtml(showDay(emp[E.hireDate]))}` : ""} · ${emp[E.active] === false ? "<strong>Inactive</strong>" : "Active"} · Source: ${escapeHtml(emp[E.source] || "")}</div>` : ""}
         </div>
         <div class="emp-start">
           <select id="empStartType" aria-label="Process to start">${procs.map(t => `<option value="${t.Id}">${escapeHtml(t.Title)}</option>`).join("")}</select>
@@ -198,31 +203,38 @@ const Roster = (() => {
 
   /* ---------- monthly roster import (Admin) ---------- */
 
+  /* Report columns, matched by name ignoring case and spaces (never by position).
+     The SQL report's order is Emp#, Badge, FirstName, LastName, Rank, WorkingOrg, Workgroup, Supervisor, AdjSvcDate.
+     WorkingOrg is deliberately not read: org codes are being retired. */
   const TARGETS = [
-    { key: "employeeId", label: "Employee ID", required: true, guess: /^(emp(loyee)?[\s_#.-]*(id|no|num(ber)?|#)|id|badge|person[\s_]*number)$/i },
-    { key: "lastName", label: "Last name", guess: /^(last[\s_]*name|surname|lname|last)$/i },
-    { key: "firstName", label: "First name", guess: /^(first[\s_]*name|fname|first|given[\s_]*name)$/i },
-    { key: "fullName", label: "Full name (if no separate first/last)", guess: /^(name|full[\s_]*name|employee[\s_]*name|emp[\s_]*name)$/i },
-    { key: "supervisor", label: "Supervisor", guess: /supervisor|manager|reports[\s_]*to/i },
-    { key: "division", label: "Division / unit", guess: /division|unit|dept|department|org(anization)?|bureau|section|cost[\s_]*center/i },
-    { key: "jobTitle", label: "Job title / rank", guess: /job[\s_]*title|title|rank|position|classification/i },
-    { key: "email", label: "Email", guess: /e-?mail/i }
+    { key: "employeeId", label: "Emp# (employee number)", required: true, names: ["emp#", "empno", "empnum", "employeenumber", "employee#", "empid", "employeeid"] },
+    { key: "badge", label: "Badge", names: ["badge", "badge#", "badgeno", "badgenumber"] },
+    { key: "firstName", label: "First name", names: ["firstname", "first"] },
+    { key: "lastName", label: "Last name", names: ["lastname", "last"] },
+    { key: "rank", label: "Rank", names: ["rank", "ranktitle"] },
+    { key: "workgroup", label: "Workgroup", names: ["workgroup", "assignment"] },
+    { key: "supervisor", label: "Supervisor", names: ["supervisor", "supervisorname"] },
+    { key: "hireDate", label: "AdjSvcDate (hire date)", names: ["adjsvcdate", "adjustedservicedate", "hiredate"] }
   ];
+  const squashHeader = v => String(v ?? "").toLowerCase().replace(/\s+/g, "");
 
-  let parsed = null;   // { headers, rows }
+  let parsed = null;   // { headers, rows, firstDataRow }
 
   async function readRosterFile(file){
     const out = document.getElementById("rosterImportArea");
     out.innerHTML = `<p class="muted">Reading ${escapeHtml(file.name)} on this computer...</p>`;
     try{
       const X = await loadSheetJS();
-      const wb = X.read(await file.arrayBuffer(), { type: "array", cellDates: true });
-      const ws = wb.Sheets[wb.SheetNames[0]];
+      const wb = X.read(await file.arrayBuffer(), { type: "array", cellDates: false });
+      const ws = wb.Sheets[wb.SheetNames[0]];   // first sheet
       const aoa = X.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null });
-      let h = aoa.findIndex(r => r.filter(c => c !== null && String(c).trim() !== "").length >= 2);
-      if(h < 0) throw new Error("No header row found");
+      // Title rows may sit above the header: find the row that has the employee-number column.
+      const empNames = TARGETS[0].names;
+      const h = aoa.findIndex((r, i) => i < 30 && (r || []).some(c => empNames.includes(squashHeader(c))));
+      if(h < 0) throw new Error("No Emp# column found. The report needs a column named Emp#, Emp #, Employee Number, or EmpID");
       const headers = aoa[h].map((c, i) => String(c ?? `Column ${i + 1}`).replace(/\s+/g, " ").trim());
-      const rows = aoa.slice(h + 1).filter(r => r.some(c => c !== null && String(c).trim() !== ""));
+      const rows = aoa.slice(h + 1).map((r, i) => ({ r: r || [], n: h + 2 + i }))
+        .filter(x => x.r.some(c => c !== null && String(c).trim() !== ""));
       parsed = { headers, rows, fileName: file.name };
       renderMapping();
     }catch(err){
@@ -231,22 +243,17 @@ const Roster = (() => {
     }
   }
 
-  function savedMapping(){
-    try{ return JSON.parse(localStorage.getItem("ps-roster-mapping") || "{}"); }catch(_){ return {}; }
-  }
-
   function renderMapping(){
-    const saved = savedMapping();
     const out = document.getElementById("rosterImportArea");
     const opt = (i, sel) => `<option value="${i}"${sel ? " selected" : ""}>${escapeHtml(parsed.headers[i])}</option>`;
+    const found = parsed.headers.map(squashHeader);
     out.innerHTML = `
-      <p><strong>${escapeHtml(parsed.fileName)}</strong>: ${parsed.rows.length.toLocaleString()} rows. Match the report's columns:</p>
+      <p><strong>${escapeHtml(parsed.fileName)}</strong>: ${parsed.rows.length.toLocaleString()} rows. Columns found (WorkingOrg is ignored on purpose):</p>
       <div class="map-grid">
         ${TARGETS.map(t => {
-          const savedIdx = parsed.headers.indexOf(saved[t.key]);
-          const guessIdx = savedIdx >= 0 ? savedIdx : parsed.headers.findIndex(hd => t.guess.test(hd));
+          const idx = found.findIndex(h => t.names.includes(h));
           return `<label class="stack-label">${escapeHtml(t.label)}${t.required ? " *" : ""}
-            <select data-target="${t.key}"><option value="">(not in this report)</option>${parsed.headers.map((_, i) => opt(i, i === guessIdx)).join("")}</select>
+            <select data-target="${t.key}"><option value="">(not in this report)</option>${parsed.headers.map((_, i) => opt(i, i === idx)).join("")}</select>
           </label>`;
         }).join("")}
       </div>
@@ -268,20 +275,26 @@ const Roster = (() => {
     if(i === undefined) return "";
     const v = row[i];
     if(v === null || v === undefined) return "";
-    return v instanceof Date ? isoDay(v) : String(v).replace(/\s+/g, " ").trim();
+    return String(v).replace(/\s+/g, " ").trim();
   }
 
+  /* One report row -> Employees list values. Hire date becomes "YYYY-MM-DD" (saved at local noon). */
   function rosterRecord(row, m){
-    let first = cell(row, m.firstName), last = cell(row, m.lastName);
-    if(!first && !last && m.fullName !== undefined){
-      const full = cell(row, m.fullName);
-      [last, first] = Cases.splitName(full);
+    const first = cell(row, m.firstName), last = cell(row, m.lastName);
+    let hire = "", hireProblem = "";
+    if(m.hireDate !== undefined && row[m.hireDate] !== null && row[m.hireDate] !== undefined && row[m.hireDate] !== ""){
+      const d = Legacy.toDay(row[m.hireDate]);
+      if(/^\d{4}-\d{2}-\d{2}$/.test(d.v)) hire = d.v; else hireProblem = String(d.v);
     }
     return {
-      [E.employeeId]: normId(cell(row, m.employeeId)),
-      [E.firstName]: first, [E.lastName]: last, [E.title]: fullName(first, last),
-      [E.supervisor]: cell(row, m.supervisor), [E.division]: cell(row, m.division),
-      [E.jobTitle]: cell(row, m.jobTitle), [E.email]: cell(row, m.email)
+      rec: {
+        [E.employeeId]: normId(cell(row, m.employeeId)),
+        [E.badge]: normBadge(cell(row, m.badge)),
+        [E.firstName]: first, [E.lastName]: last, [E.title]: fullName(first, last),
+        [E.rank]: cell(row, m.rank), [E.division]: cell(row, m.workgroup),
+        [E.supervisor]: cell(row, m.supervisor)
+      },
+      hire, hireProblem
     };
   }
 
@@ -290,45 +303,48 @@ const Roster = (() => {
   async function preview(){
     const m = mapping();
     const box = document.getElementById("rosterPreview");
-    if(m.employeeId === undefined){ box.innerHTML = `<p class="error-text">Choose which column holds the Employee ID.</p>`; return; }
-    try{ localStorage.setItem("ps-roster-mapping", JSON.stringify(Object.fromEntries(Object.entries(m).map(([k, i]) => [k, parsed.headers[i]])))); }catch(_){}
+    if(m.employeeId === undefined){ box.innerHTML = `<p class="error-text">Choose which column holds the Emp#.</p>`; return; }
     box.innerHTML = `<p class="muted">Comparing with the current roster...</p>`;
     await ready(true);
-    const seen = new Set();
+    const firstRowFor = new Map();
+    const dups = [];
     const create = [], update = [], same = [];
-    let noId = 0, dup = 0;
-    parsed.rows.forEach(r => {
-      const rec = rosterRecord(r, m);
+    const hireProblems = [];
+    let noId = 0;
+    parsed.rows.forEach(({ r, n }) => {
+      const { rec, hire, hireProblem } = rosterRecord(r, m);
       const id = rec[E.employeeId];
       if(!id){ noId++; return; }
-      if(seen.has(id)){ dup++; return; }
-      seen.add(id);
-      const cur = find(id);
-      if(!cur){ create.push(rec); return; }
+      if(firstRowFor.has(id)){ dups.push(`${id} (row ${n}; first seen row ${firstRowFor.get(id)})`); return; }   // first row wins
+      firstRowFor.set(id, n);
+      if(hireProblem) hireProblems.push(`row ${n}: AdjSvcDate "${hireProblem}"`);
+      const cur = byId.get(id);
+      if(!cur){ create.push({ rec, hire }); return; }
       const diff = {};
       Object.keys(rec).forEach(k => {
         if(k === E.employeeId) return;
-        // never blank out a value just because this report lacks that column
-        if(rec[k] === "" ) return;
+        if(rec[k] === "") return;   // a blank cell never erases a saved value
         if(String(cur[k] ?? "") !== rec[k]) diff[k] = rec[k];
       });
+      if(hire && isoDay(cur[E.hireDate] || "") !== hire) diff[E.hireDate] = dayToIso(hire);
       if(cur[E.active] === false) diff[E.active] = true;
       if(cur[E.source] !== "Roster") diff[E.source] = "Roster";
       if(Object.keys(diff).length) update.push({ cur, diff }); else same.push(cur);
     });
     const inactivate = document.getElementById("rosterInactivate").checked
-      ? employees.filter(e => e[E.active] !== false && e[E.source] === "Roster" && !seen.has(normId(e[E.employeeId])))
+      ? employees.filter(e => e[E.active] !== false && e[E.source] === "Roster" && !firstRowFor.has(normId(e[E.employeeId])))
       : [];
-    plan = { create, update, inactivate };
+    plan = { create, update, inactivate, dups: dups.length };
     box.innerHTML = `
       <ul class="plan-list">
         <li><strong>${create.length.toLocaleString()}</strong> new employees to add</li>
-        <li><strong>${update.length.toLocaleString()}</strong> existing employees with changes (name, supervisor, division, title, email, or back to active)</li>
+        <li><strong>${update.length.toLocaleString()}</strong> existing employees with changes (name, badge, rank, workgroup, supervisor, hire date, or back to active)</li>
         <li><strong>${same.length.toLocaleString()}</strong> unchanged</li>
         <li><strong>${inactivate.length.toLocaleString()}</strong> no longer on the report → marked inactive</li>
-        ${noId ? `<li class="warn-text">${noId} rows skipped: no employee ID</li>` : ""}
-        ${dup ? `<li class="warn-text">${dup} duplicate rows skipped (same employee ID twice)</li>` : ""}
+        ${noId ? `<li class="warn-text">${noId} rows skipped: no Emp#</li>` : ""}
       </ul>
+      ${dups.length ? `<details class="mine" open><summary class="warn-text">${dups.length} duplicate Emp# row${dups.length === 1 ? "" : "s"}: the first row was used, these were skipped</summary><ul class="small">${dups.slice(0, 100).map(d => `<li>${escapeHtml(d)}</li>`).join("")}</ul></details>` : ""}
+      ${hireProblems.length ? `<details class="mine"><summary class="warn-text">${hireProblems.length} AdjSvcDate value${hireProblems.length === 1 ? "" : "s"} couldn't be read as a date (left unchanged)</summary><ul class="small">${hireProblems.slice(0, 100).map(d => `<li>${escapeHtml(d)}</li>`).join("")}</ul></details>` : ""}
       ${inactivate.length > Math.max(50, employees.length * 0.2) ? `<p class="warn-text"><strong>Check before importing:</strong> that's a lot of people to mark inactive. Make sure this is the full roster report, not a partial one.</p>` : ""}
       <button type="button" class="btn btn-navy" id="rosterRunBtn" ${create.length + update.length + inactivate.length ? "" : "disabled"}>Update the roster</button>
       <div id="rosterProgress"></div>`;
@@ -341,7 +357,9 @@ const Roster = (() => {
     const prog = document.getElementById("rosterProgress");
     const now = new Date().toISOString();
     const jobs = [
-      ...plan.create.map(rec => () => spCreate(CONFIG.lists.employees, { ...rec, [E.active]: true, [E.source]: "Roster", [E.lastRosterDate]: now })),
+      ...plan.create.map(({ rec, hire }) => () => spCreate(CONFIG.lists.employees, {
+        ...rec, ...(hire ? { [E.hireDate]: dayToIso(hire) } : {}),
+        [E.active]: true, [E.source]: "Roster", [E.lastRosterDate]: now })),
       ...plan.update.map(u => () => spUpdate(CONFIG.lists.employees, u.cur.Id, { ...u.diff, [E.lastRosterDate]: now })),
       ...plan.inactivate.map(e => () => spUpdate(CONFIG.lists.employees, e.Id, { [E.active]: false }))
     ];
@@ -350,7 +368,7 @@ const Roster = (() => {
     const res = await runPool(jobs, job => job(), 8, show);
     await ready(true);
     prog.innerHTML = `<p class="${res.failed.length ? "warn-text" : ""}"><strong>Roster updated.</strong> ${res.ok.toLocaleString()} saved${res.failed.length ? `, ${res.failed.length} failed (${escapeHtml(res.failed[0].err.message)}). Run the import again to retry; it only changes what's still different.` : "."}</p>`;
-    audit(AUDIT_AREAS.imports, `Imported roster from ${parsed.fileName}: ${plan.create.length} added, ${plan.update.length} updated, ${plan.inactivate.length} marked inactive${res.failed.length ? `, ${res.failed.length} failed` : ""}`);
+    audit(AUDIT_AREAS.imports, `Imported roster from ${parsed.fileName}: ${plan.create.length} added, ${plan.update.length} updated, ${plan.inactivate.length} marked inactive${plan.dups ? `, ${plan.dups} duplicate Emp# rows skipped` : ""}${res.failed.length ? `, ${res.failed.length} failed` : ""}`);
     renderSearch();
   }
 
