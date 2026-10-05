@@ -1,4 +1,4 @@
-(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["cases.js"] = "2026.10.05-1";
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["cases.js"] = "2026.10.05-2";
 /* ============================================================
    cases.js — 2.0 employee processes ("cases").
 
@@ -159,7 +159,8 @@ const Cases = (() => {
     const emp = id ? Roster.find(id) : null;
     const name = emp ? emp[EMP_FIELDS.title] : item[W.employeeName];
     const bits = [
-      emp && emp[EMP_FIELDS.jobTitle], emp && emp[EMP_FIELDS.division],
+      emp && emp[EMP_FIELDS.rank], emp && emp[EMP_FIELDS.division],
+      emp && emp[EMP_FIELDS.badge] ? `Badge ${emp[EMP_FIELDS.badge]}` : "",
       emp && emp[EMP_FIELDS.active] === false ? "Inactive in roster" : "",
       !emp && id ? "Not in the current roster" : ""
     ].filter(Boolean).map(escapeHtml).join(" · ");
