@@ -1,4 +1,4 @@
-(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["config.js"] = "2026.10.02-3";
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["config.js"] = "2026.10.05-1";
 /* ============================================================
    config.js — every environment value and SharePoint column name
    lives here. If a live field check shows a different internal
@@ -20,7 +20,8 @@ const CONFIG = {
     alertRules: "Alert Rules",
     team: "Team Members",
     workItems: "Work Items",
-    workItemLog: "Work Item Log"
+    workItemLog: "Work Item Log",
+    employees: "Employees"            // 2.0 — roster, refreshed from the monthly SQL report
   },
 
   adminContact: "Jared Nielsen",
@@ -45,7 +46,8 @@ const TYPE_FIELDS = {
   description: "Description",             // Single line of text (optional helper text)
   active: "Active",                       // Yes/No
   checklistSteps: "ChecklistSteps",       // Multiple lines of text (plain). Empty = simple one-step logging.
-  team: "Team"                            // Choice: SRU | PSU | Both. Blank = shown to both teams
+  team: "Team",                           // Choice: SRU | PSU | Both. Blank = shown to both teams
+  caseFields: "CaseFields"                // 2.0 — Multiple lines (plain). JSON: makes this an employee process (see CASE_COLUMNS)
 };
 
 /* Sub-teams within Personnel Support. Activities belong to one of these, or to
@@ -139,8 +141,56 @@ const WORK_FIELDS = {
   closedOn: "ClosedOn",               // Date and time — completed or cancelled
   closedBy: "ClosedBy",               // Single line
   steps: "Steps",                     // Multiple lines of text (plain) — this item's own checklist (JSON)
-  completionLogId: "CompletionLogId"  // Number — Activity Log entry written on completion
+  completionLogId: "CompletionLogId", // Number — Activity Log entry written on completion
+  // 2.0 — employee processes (cases). Common fields are real columns; the rest live in CaseData.
+  employeeId: "EmployeeId",           // Single line — indexed
+  employeeName: "EmployeeName",       // Single line — "Last, First" at the time the case started
+  supervisor: "Supervisor",           // Single line
+  receivedDate: "ReceivedDate",       // Date and time
+  startDate: "StartDate",             // Date and time
+  endDate: "EndDate",                 // Date and time
+  outcome: "Outcome",                 // Single line — Approved, Denied, Dropped...
+  caseData: "CaseData",               // Multiple lines (plain) — JSON of process-specific fields
+  legacyKey: "LegacyKey"              // Single line — indexed; set on rows brought in by the legacy import
 };
+
+/* Employees list (roster) */
+const EMP_FIELDS = {
+  title: "Title",                 // "Last, First"
+  employeeId: "EmployeeId",       // Single line — indexed
+  firstName: "FirstName",
+  lastName: "LastName",
+  supervisor: "Supervisor",
+  division: "Division",
+  jobTitle: "JobTitle",
+  email: "Email",
+  active: "Active",               // Yes/No
+  source: "Source",               // Single line — Roster | Legacy import | Manual
+  lastRosterDate: "LastRosterDate" // Date and time — last roster upload that included this person
+};
+
+/* Case fields that are stored in real Work Items columns (the rest go in CaseData JSON).
+   A process field definition with { col: "received" } is stored in WORK_FIELDS.receivedDate, etc. */
+const CASE_COLUMNS = {
+  received: { field: "receivedDate", type: "date", label: "Date received" },
+  start: { field: "startDate", type: "date", label: "Start date" },
+  end: { field: "endDate", type: "date", label: "End date" },
+  supervisor: { field: "supervisor", type: "text", label: "Supervisor" },
+  outcome: { field: "outcome", type: "choice", label: "Outcome" }
+};
+
+const CASE_FIELD_TYPES = {
+  date: "Date",
+  yesno: "Yes / No",
+  text: "Text",
+  longtext: "Notes (long text)",
+  number: "Number",
+  money: "Dollar amount",
+  choice: "Pick from a list"
+};
+
+/* SheetJS (reads and writes Excel in the browser; files never leave the computer) */
+const SHEETJS_URL = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
 
 /* Work Item Log list — history and notes for each work item */
 const WORKLOG_FIELDS = {
@@ -168,7 +218,9 @@ const AUDIT_AREAS = {
   work: "Tracked work",
   admin: "Admin",
   access: "Access",
-  data: "Data access"
+  data: "Data access",
+  employees: "Employees",
+  imports: "Imports"
 };
 
 const PRESET_COLORS = [
