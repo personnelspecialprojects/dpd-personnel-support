@@ -1,4 +1,4 @@
-(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["activity.js"] = "2026.10.02-3";
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["activity.js"] = "2026.10.05-1";
 /* ============================================================
    activity.js — the Log Activity tab.
    One row per active activity type. Type an ID, press Enter.
@@ -81,7 +81,8 @@ const Activity = (() => {
     try{
       const arr = JSON.parse(raw);
       if(Array.isArray(arr)){
-        return arr.map(x => ({ text: String((x && x.text) || "").trim(), external: !!(x && x.external) }))
+        return arr.map(x => ({ text: String((x && x.text) || "").trim(), external: !!(x && x.external),
+            ...(x && x.field ? { field: String(x.field) } : {}) }))
           .filter(x => x.text);
       }
     }catch(_){ /* not JSON — fall through to line format */ }
@@ -91,7 +92,12 @@ const Activity = (() => {
     });
   }
 
-  function hasChecklist(t){ return inputMode(t) !== "count" && templateSteps(t).length > 0; }
+  function hasChecklist(t){
+    if(inputMode(t) === "count") return false;
+    // 2.0: employee processes always run as cases, even before steps are added.
+    if(typeof Cases !== "undefined" && Cases.isEmployeeProcess(t)) return true;
+    return templateSteps(t).length > 0;
+  }
 
   function windowDays(t){
     const v = t[T.duplicateWindowDays];
@@ -235,12 +241,13 @@ const Activity = (() => {
     const mode = inputMode(t);
     const label = inputLabel(t);
     const checklist = hasChecklist(t);
+    const empProc = typeof Cases !== "undefined" && Cases.isEmployeeProcess(t);
     const control = checklist
-      ? (mode === "click"
+      ? (mode === "click" && !empProc
           ? `<button type="button" class="btn btn-navy task-log task-log-wide" data-type-id="${t.Id}">Start one</button>`
           : `<input class="task-input" data-type-id="${t.Id}" type="text" autocomplete="off" spellcheck="false"
-                ${mode === "employee" ? 'inputmode="numeric"' : ""}
-                placeholder="${escapeHtml(label)}" aria-label="${escapeHtml(`${t.Title}: ${label}`)}">
+                ${mode === "employee" || empProc ? 'inputmode="numeric"' : ""}
+                placeholder="${escapeHtml(empProc ? "Employee #" : label)}" aria-label="${escapeHtml(`${t.Title}: ${empProc ? "Employee #" : label}`)}">
              <button type="button" class="btn btn-navy task-log" data-type-id="${t.Id}">Start</button>`)
       : mode === "click"
       ? `<button type="button" class="btn btn-navy task-log task-log-wide" data-type-id="${t.Id}">Log one</button>`
@@ -257,7 +264,7 @@ const Activity = (() => {
         <div class="task-main">
           <div class="task-name">${escapeHtml(t.Title || "")}</div>
           ${t[T.description] ? `<div class="task-desc">${escapeHtml(t[T.description])}</div>` : ""}
-          ${checklist ? `<div class="task-sub"><span class="checklist-tag">Checklist · ${plural(templateSteps(t).length, "step")}</span><span data-open-for="${t.Id}"></span></div>` : ""}
+          ${checklist ? `<div class="task-sub"><span class="checklist-tag">${empProc ? "Employee process" : "Checklist"} · ${plural(templateSteps(t).length, "step")}</span><span data-open-for="${t.Id}"></span></div>` : ""}
         </div>
         <div class="task-count" data-count-for="${t.Id}"></div>
         <div class="task-entry">${control}</div>
@@ -516,8 +523,9 @@ const Activity = (() => {
 
   /* ---------- checklist activities: Start creates a work item ---------- */
 
-  async function startChecklist(type, input, force, presetValue){
-    const mode = inputMode(type);
+  async function startChecklist(type, input, force, presetValue, notInRoster){
+    const isEmpProcess = typeof Cases !== "undefined" && Cases.isEmployeeProcess(type);
+    const mode = isEmpProcess ? "employee" : inputMode(type);   // employee processes always take an employee #
     let value = presetValue !== undefined ? presetValue : (input ? input.value.trim() : "");
     if(mode !== "click"){
       if(!value){
@@ -545,7 +553,20 @@ const Activity = (() => {
     clearFeedback(type.Id);
     let keepFocus = true;
     try{
-      const result = await Work.start(type, value, { force });
+      let result;
+      if(isEmpProcess){
+        // 2.0: look the employee up in the roster and tie the case to them.
+        await Roster.ready();
+        const emp = Roster.find(value);
+        if(!emp && !notInRoster){
+          showNotInRoster(type, input, value, force);
+          keepFocus = false;
+          return;
+        }
+        result = await Work.start(type, value, { force, employee: emp || { [EMP_FIELDS.employeeId]: value } });
+      }else{
+        result = await Work.start(type, value, { force });
+      }
       if(result.duplicate){
         showStartDuplicate(type, value, result.duplicate);
         keepFocus = false;
@@ -570,6 +591,21 @@ const Activity = (() => {
     }
   }
 
+  function showNotInRoster(type, input, value, force){
+    const el = feedbackEl(type.Id);
+    if(!el) return;
+    el.className = "task-feedback show warn";
+    el.innerHTML = `
+      <div class="dupe-text">Employee <strong>${escapeHtml(value)}</strong> isn't in the roster${Roster.count() ? "" : " (no roster has been imported yet)"}. Check the number, or start the case anyway.</div>
+      <div class="dupe-actions">
+        <button type="button" class="btn btn-sm btn-navy" data-act="go">Start anyway</button>
+        <button type="button" class="btn btn-sm btn-ghost" data-act="skip">Cancel</button>
+      </div>`;
+    el.querySelector('[data-act="go"]').addEventListener("click", () => { clearFeedback(type.Id); startChecklist(type, input, force, value, true); });
+    el.querySelector('[data-act="skip"]').addEventListener("click", () => { clearFeedback(type.Id); if(input) input.focus(); });
+    el.querySelector('[data-act="go"]').focus();
+  }
+
   function showStartDuplicate(type, value, existing){
     const el = feedbackEl(type.Id);
     if(!el) return;
@@ -591,7 +627,7 @@ const Activity = (() => {
     });
     el.querySelector('[data-act="again"]').addEventListener("click", () => {
       clearFeedback(type.Id);
-      startChecklist(type, input, true, value);
+      startChecklist(type, input, true, value, typeof Roster !== "undefined" && !Roster.find(value));
     });
     el.querySelector('[data-act="skip"]').addEventListener("click", () => {
       clearFeedback(type.Id);
