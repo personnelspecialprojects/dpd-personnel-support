@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Personnel Support</title>
-<link rel="stylesheet" href="styles.css?v=2026.10.02-3">
+<link rel="stylesheet" href="styles.css?v=2026.10.05-1">
 <script src="https://alcdn.msauth.net/browser/2.35.0/js/msal-browser.min.js"
   onerror="this.onerror=null;var s=document.createElement('script');s.src='https://alcdn.msftauth.net/browser/2.35.0/js/msal-browser.min.js';document.head.appendChild(s);"></script>
 </head>
@@ -41,6 +41,8 @@
   <nav class="tabs" role="tablist">
     <button type="button" class="tab active" role="tab" aria-selected="true" data-view="dashView">Dashboard <span id="openInquiryBadge" class="tab-badge" hidden></span></button>
     <button type="button" class="tab" role="tab" aria-selected="false" data-view="specialView">Special Projects Inquiries <span id="specialBadge" class="tab-badge" hidden></span></button>
+    <button type="button" class="tab" role="tab" aria-selected="false" data-view="processView">Employee processes</button>
+    <button type="button" class="tab" role="tab" aria-selected="false" data-view="employeeView">Employees</button>
     <button type="button" class="tab" role="tab" aria-selected="false" data-view="workView">Tracked work <span id="myWorkBadge" class="tab-badge" hidden></span></button>
     <button type="button" class="tab" role="tab" aria-selected="false" data-view="reportsView">Reports</button>
     <button type="button" class="tab" role="tab" aria-selected="false" data-view="auditView">Audit log</button>
@@ -132,6 +134,60 @@
         <div id="spEmptyState" class="empty-block" hidden></div>
       </div>
     </section>
+  </div>
+
+  <!-- 2.0 EMPLOYEE PROCESSES: one table per process, like the old spreadsheet tabs -->
+  <div class="view" id="processView">
+    <div id="procEmpty" class="empty-block" hidden>
+      <p><strong>No employee processes yet.</strong></p>
+      <p>An admin can install the starter processes in Admin → Employee processes.</p>
+    </div>
+    <div id="procMain">
+      <div class="toolbar">
+        <select id="procSelect" aria-label="Process"></select>
+        <select id="procStatus" aria-label="Status">
+          <option value="open">Open cases</option>
+          <option value="all">All cases</option>
+          <option value="closed">Closed cases</option>
+        </select>
+        <input type="text" id="procSearch" placeholder="Search name, employee #, any field" aria-label="Search cases">
+        <button type="button" class="btn btn-ghost btn-sm" id="procRefresh">Refresh</button>
+        <div class="toolbar-end">
+          <button type="button" class="btn btn-ghost" id="procExportOne">Export to Excel</button>
+          <button type="button" class="btn btn-ghost" id="procExportAll">Export all processes</button>
+        </div>
+      </div>
+      <div class="toolbar proc-start">
+        <label class="inline-label">Start a case for employee #
+          <input type="text" id="procStartId" inputmode="numeric" class="narrow-input wide-num" autocomplete="off">
+        </label>
+        <button type="button" class="btn btn-navy btn-sm" id="procStartBtn">Start</button>
+        <span class="save-msg" id="procStartMsg"></span>
+        <span class="muted small" id="procCount"></span>
+      </div>
+      <div class="table-scroll proc-table">
+        <table class="data">
+          <thead id="procHead"></thead>
+          <tbody id="procBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2.0 EMPLOYEES (roster) -->
+  <div class="view" id="employeeView">
+    <div class="emp-layout">
+      <section class="panel emp-search">
+        <div class="toolbar">
+          <input type="text" id="empSearch" placeholder="Name or employee #" aria-label="Search employees">
+          <label class="check small"><input type="checkbox" id="empShowInactive"> Include inactive</label>
+        </div>
+        <div class="muted small" id="empCount"></div>
+        <div id="empResults"></div>
+        <button type="button" class="link-btn" id="empAddBtn">Someone missing? Add an employee</button>
+      </section>
+      <section class="panel emp-detail" id="empDetail" hidden></section>
+    </div>
   </div>
 
   <!-- TRACKED WORK -->
@@ -230,6 +286,30 @@
         <button type="button" class="btn btn-navy" id="runSetupCheckBtn">Check SharePoint setup</button>
       </div>
       <div id="setupCheckResults"></div>
+    </section>
+
+    <section class="panel">
+      <h3>Employee roster</h3>
+      <p class="muted small">Upload the monthly roster report (Excel or CSV) from the SQL report server. It's read on this computer and only the roster columns are saved to SharePoint. New people are added, changes are updated, and people no longer on the report are marked inactive (never deleted). You'll see a preview before anything is saved.</p>
+      <input type="file" id="rosterFile" accept=".xlsx,.xls,.csv" aria-label="Roster report file">
+      <div id="rosterImportArea"></div>
+    </section>
+
+    <section class="panel">
+      <h3>Employee processes</h3>
+      <p class="muted small">Ten processes built from the team's leave tracking workbook: Advanced Sick Leave, Extension of Probation &amp; Training, DPD Phase Down, Leave of Absence, Tuition Reimbursement, Paid Parental Leave, Return to Patrol, Trade Time, LSAP and LSAP Recertification. Each comes with its fields and a checklist linked to them. After installing, edit any of them under Activities below.</p>
+      <div class="toolbar">
+        <button type="button" class="btn btn-navy" id="installStartersBtn">Install starter processes</button>
+        <span class="muted small" id="starterStatus"></span>
+      </div>
+      <div id="starterResult"></div>
+    </section>
+
+    <section class="panel">
+      <h3>Legacy spreadsheet import</h3>
+      <p class="muted small">Bring in the old tracking workbook (all tabs). It's read on this computer; nothing is uploaded except the cases themselves to SharePoint. You'll see a preview with counts and any data problems first. Running it again skips rows already imported.</p>
+      <input type="file" id="legacyFile" accept=".xlsx,.xls" aria-label="Legacy workbook">
+      <div id="legacyArea"></div>
     </section>
 
     <section class="panel">
@@ -417,7 +497,26 @@
           <div class="hint">Which team's Dashboard shows this activity. "Both" shows it to everyone.</div>
         </div>
       </div>
-      <div class="field-row">
+      <div class="field-row" id="atEmpProcRow">
+        <label>Employee process</label>
+        <div>
+          <label class="check"><input type="checkbox" id="atEmpProc"> Each case is about one employee (uses the roster)</label>
+          <div class="hint">Staff start a case by employee number. The case has its own fields, and checklist steps can fill them in, so the employee's record updates as the checklist is worked.</div>
+        </div>
+      </div>
+      <div class="field-row" id="atFieldsRow" hidden>
+        <label>Fields</label>
+        <div>
+          <ol class="tpl-steps field-list" id="atFields"></ol>
+          <div class="add-step">
+            <input type="text" id="atNewFieldLabel" placeholder="Add a field, e.g. Date entered in Workday">
+            <select id="atNewFieldType" aria-label="New field type"></select>
+            <button type="button" class="btn btn-ghost btn-sm" id="atAddFieldBtn">Add field</button>
+          </div>
+          <div class="hint">"Column" fields are stored in their own SharePoint column (received/start/end dates, supervisor, outcome). Everything else is stored with the case and appears in the app and in exports.</div>
+        </div>
+      </div>
+      <div class="field-row" id="atInputTypeRow">
         <label for="atInputType">Staff enter</label>
         <select id="atInputType">
           <option value="Employee Number">An employee number</option>
@@ -490,18 +589,21 @@
 <script>
   /* Release stamp. Every .js file carries the same stamp; core.js warns if any differ
      (an old cached or un-uploaded file). Bump it in ALL files for each release. */
-  window.PS_PAGE_VERSION = "2026.10.02-3";
+  window.PS_PAGE_VERSION = "2026.10.05-1";
   window.PS_FILE_VERSIONS = {};
 </script>
-<script src="config.js?v=2026.10.02-3"></script>
-<script src="core.js?v=2026.10.02-3"></script>
-<script src="activity.js?v=2026.10.02-3"></script>
-<script src="work.js?v=2026.10.02-3"></script>
-<script src="tickets.js?v=2026.10.02-3"></script>
-<script src="reports.js?v=2026.10.02-3"></script>
-<script src="admin.js?v=2026.10.02-3"></script>
-<script src="audit.js?v=2026.10.02-3"></script>
-<script src="setup-check.js?v=2026.10.02-3"></script>
+<script src="config.js?v=2026.10.05-1"></script>
+<script src="core.js?v=2026.10.05-1"></script>
+<script src="activity.js?v=2026.10.05-1"></script>
+<script src="work.js?v=2026.10.05-1"></script>
+<script src="tickets.js?v=2026.10.05-1"></script>
+<script src="reports.js?v=2026.10.05-1"></script>
+<script src="admin.js?v=2026.10.05-1"></script>
+<script src="audit.js?v=2026.10.05-1"></script>
+<script src="setup-check.js?v=2026.10.05-1"></script>
+<script src="roster.js?v=2026.10.05-1"></script>
+<script src="cases.js?v=2026.10.05-1"></script>
+<script src="legacy.js?v=2026.10.05-1"></script>
 <script>boot();</script>
 </body>
 </html>
