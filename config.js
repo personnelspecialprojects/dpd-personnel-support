@@ -1,4 +1,4 @@
-(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["config.js"] = "2026.10.05-1";
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["config.js"] = "2026.10.05-2";
 /* ============================================================
    config.js — every environment value and SharePoint column name
    lives here. If a live field check shows a different internal
@@ -155,15 +155,17 @@ const WORK_FIELDS = {
 };
 
 /* Employees list (roster) */
+/* Filled from the monthly SQL report: Emp#, Badge, FirstName, LastName, Rank, WorkingOrg (ignored), Workgroup, Supervisor, AdjSvcDate */
 const EMP_FIELDS = {
   title: "Title",                 // "Last, First"
-  employeeId: "EmployeeId",       // Single line — indexed
+  employeeId: "EmployeeID",       // Single line — indexed. Report: Emp# (leading zeros dropped for matching)
+  badge: "Badge",                 // Single line — report: Badge (blank for non-sworn). Also accepted as a lookup ID
   firstName: "FirstName",
   lastName: "LastName",
+  rank: "Rank",                   // Single line — report: Rank
+  division: "Division",           // Single line — report: Workgroup (shown as "Workgroup" in the app)
   supervisor: "Supervisor",
-  division: "Division",
-  jobTitle: "JobTitle",
-  email: "Email",
+  hireDate: "HireDate",           // Date — report: AdjSvcDate (adjusted service date, used as hire date)
   active: "Active",               // Yes/No
   source: "Source",               // Single line — Roster | Legacy import | Manual
   lastRosterDate: "LastRosterDate" // Date and time — last roster upload that included this person
