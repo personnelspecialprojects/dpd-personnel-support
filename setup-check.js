@@ -1,4 +1,4 @@
-(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["setup-check.js"] = "2026.10.02-3";
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["setup-check.js"] = "2026.10.05-1";
 /* ============================================================
    setup-check.js — Admin → "Check SharePoint setup".
    Read-only. Compares every list and column the app expects
@@ -23,7 +23,7 @@ const SetupCheck = (() => {
        options.index    — should be indexed (needed once the list passes 5,000 items) */
   function schema(){
     const T = TYPE_FIELDS, F = LOG_FIELDS, R = REQ_FIELDS, A = AUDIT_FIELDS,
-          AL = ALERT_FIELDS, M = TEAM_FIELDS, W = WORK_FIELDS, WL = WORKLOG_FIELDS;
+          AL = ALERT_FIELDS, M = TEAM_FIELDS, W = WORK_FIELDS, WL = WORKLOG_FIELDS, E = EMP_FIELDS;
     return [
       { list: CONFIG.lists.team, purpose: "who can sign in", fields: [
         [M.role, "Choice", { choices: ["Staff", "Admin"] }], [M.team, "Choice", { choices: TEAMS }]
@@ -32,7 +32,7 @@ const SetupCheck = (() => {
         [T.category, "Text"], [T.inputType, "Choice", { choices: INPUT_TYPES }], [T.inputLabel, "Text"],
         [T.duplicateWindowDays, "Number"], [T.sortOrder, "Number"], [T.description, "Text"],
         [T.active, "Boolean"], [T.checklistSteps, "Note", { json: true }],
-        [T.team, "Choice", { choices: [...TEAMS, TEAM_BOTH] }]
+        [T.team, "Choice", { choices: [...TEAMS, TEAM_BOTH] }], [T.caseFields, "Note", { json: true }]
       ]},
       { list: CONFIG.lists.activityLog, purpose: "every logged activity", fields: [
         [F.activityTypeId, "Number", { index: true }], [F.activityName, "Text"], [F.category, "Text"],
@@ -63,12 +63,21 @@ const SetupCheck = (() => {
         [AL.excludeWeekends, "Boolean"], [AL.active, "Boolean"]
       ]},
       { list: CONFIG.lists.workItems, purpose: "tracked work (checklists)", fields: [
-        [W.activityTypeId, "Number"], [W.activityName, "Text"], [W.category, "Text"], [W.identifier, "Text"],
+        [W.activityTypeId, "Number", { index: true }], [W.activityName, "Text"], [W.category, "Text"], [W.identifier, "Text"],
         [W.status, "Choice", { index: true, choices: ["Open", "Completed", "Cancelled"] }],
         [W.ownerName, "Text"], [W.ownerEmail, "Text"], [W.startedBy, "Text"],
         [W.startedOn, "DateTime", { time: true }], [W.lastActivityOn, "DateTime", { time: true }],
         [W.closedOn, "DateTime", { index: true, time: true }], [W.closedBy, "Text"],
-        [W.steps, "Note", { json: true }], [W.completionLogId, "Number"]
+        [W.steps, "Note", { json: true }], [W.completionLogId, "Number"],
+        // 2.0 employee processes
+        [W.employeeId, "Text", { index: true }], [W.employeeName, "Text"], [W.supervisor, "Text"],
+        [W.receivedDate, "DateTime", { time: true }], [W.startDate, "DateTime", { time: true }], [W.endDate, "DateTime", { time: true }],
+        [W.outcome, "Text"], [W.caseData, "Note", { json: true }], [W.legacyKey, "Text", { index: true }]
+      ]},
+      { list: CONFIG.lists.employees, purpose: "2.0: the employee roster", fields: [
+        [E.employeeId, "Text", { index: true }], [E.firstName, "Text"], [E.lastName, "Text"], [E.supervisor, "Text"],
+        [E.division, "Text"], [E.jobTitle, "Text"], [E.email, "Text"], [E.active, "Boolean"], [E.source, "Text"],
+        [E.lastRosterDate, "DateTime", { time: true }]
       ]},
       { list: CONFIG.lists.workItemLog, purpose: "tracked work history and notes", fields: [
         [WL.workItemId, "Number", { index: true }], [WL.action, "Note", { plain: true }],
