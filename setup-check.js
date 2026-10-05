@@ -1,4 +1,4 @@
-(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["setup-check.js"] = "2026.10.05-1";
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["setup-check.js"] = "2026.10.05-2";
 /* ============================================================
    setup-check.js — Admin → "Check SharePoint setup".
    Read-only. Compares every list and column the app expects
@@ -76,7 +76,8 @@ const SetupCheck = (() => {
       ]},
       { list: CONFIG.lists.employees, purpose: "2.0: the employee roster", fields: [
         [E.employeeId, "Text", { index: true }], [E.firstName, "Text"], [E.lastName, "Text"], [E.supervisor, "Text"],
-        [E.division, "Text"], [E.jobTitle, "Text"], [E.email, "Text"], [E.active, "Boolean"], [E.source, "Text"],
+        [E.badge, "Text"], [E.rank, "Text"], [E.division, "Text"], [E.hireDate, "DateTime"],
+        [E.active, "Boolean"], [E.source, "Text"],
         [E.lastRosterDate, "DateTime", { time: true }]
       ]},
       { list: CONFIG.lists.workItemLog, purpose: "tracked work history and notes", fields: [
