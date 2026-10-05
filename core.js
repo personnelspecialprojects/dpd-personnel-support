@@ -1,4 +1,4 @@
-(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["core.js"] = "2026.10.02-3";
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["core.js"] = "2026.10.05-1";
 /* ============================================================
    core.js — sign-in, SharePoint REST helpers, shared utilities,
    tab routing, polling, and boot. Loaded before the feature files.
@@ -151,6 +151,9 @@ async function startSession(account){
   safeInit("Reports", () => Reports.init());
   safeInit("Admin", () => Admin.init());
   safeInit("Audit", () => Audit.init());
+  safeInit("Roster", () => Roster.init());
+  safeInit("Cases", () => Cases.init());
+  if(App.isAdmin) safeInit("Legacy import", () => Legacy.init());
   if(App.isAdmin) safeInit("Setup check", () => SetupCheck.init());
   markSynced();
   startPolling();
@@ -364,6 +367,65 @@ function audit(area, action, extra = {}){
   return writeAudit(area, entry, extra);
 }
 
+/* ---------------- 2.0 helpers: Excel, batches, dates ---------------- */
+
+/* Load SheetJS on first use. Spreadsheets are read and written entirely in the browser. */
+let sheetJsPromise = null;
+function loadSheetJS(){
+  if(typeof XLSX !== "undefined") return Promise.resolve(XLSX);
+  if(sheetJsPromise) return sheetJsPromise;
+  sheetJsPromise = new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = SHEETJS_URL;
+    s.onload = () => (typeof XLSX !== "undefined" ? resolve(XLSX) : reject(new Error("Excel library loaded but isn't available")));
+    s.onerror = () => { sheetJsPromise = null; reject(new Error("The Excel library couldn't load (cdnjs.cloudflare.com may be blocked on this network)")); };
+    document.head.appendChild(s);
+  });
+  return sheetJsPromise;
+}
+
+/* Run `worker` over items, `size` at a time, reporting progress. Never throws; returns { ok, failed }. */
+async function runPool(items, worker, size = 5, onProgress){
+  let ok = 0;
+  const failed = [];
+  let next = 0, done = 0;
+  async function lane(){
+    while(next < items.length){
+      const i = next++;
+      try{ await worker(items[i], i); ok++; }
+      catch(err){ console.error("Batch item failed:", err); failed.push({ item: items[i], err }); }
+      done++;
+      if(onProgress) onProgress(done, items.length);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(size, items.length) }, lane));
+  return { ok, failed };
+}
+
+/* Local calendar date "YYYY-MM-DD" from a Date (no timezone drift). */
+function isoDay(d){
+  const x = new Date(d);
+  if(isNaN(x)) return "";
+  const p = n => String(n).padStart(2, "0");
+  return `${x.getFullYear()}-${p(x.getMonth() + 1)}-${p(x.getDate())}`;
+}
+
+/* "YYYY-MM-DD" -> ISO timestamp at local noon (safe for SharePoint Date columns in any timezone). */
+function dayToIso(day){
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(day || ""));
+  if(!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12, 0, 0).toISOString();
+}
+
+/* Display "YYYY-MM-DD" (or an ISO timestamp) as "Oct 5, 2026"; anything else is shown as-is. */
+function showDay(v){
+  if(!v) return "";
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v));
+  if(!m) return String(v);
+  const d = String(v).length > 10 ? new Date(v) : new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
 /* ---------------- Utilities ---------------- */
 
 function escapeHtml(s){
@@ -515,7 +577,7 @@ function closeOverlay(id){ document.getElementById(id).classList.remove("active"
 /* ---------------- Version check ---------------- */
 
 const PS_EXPECTED_FILES = ["config.js", "core.js", "activity.js", "work.js", "tickets.js",
-  "reports.js", "admin.js", "audit.js", "setup-check.js"];
+  "reports.js", "admin.js", "audit.js", "setup-check.js", "roster.js", "cases.js", "legacy.js"];
 
 /* Files whose release stamp doesn't match the page (old cached copy, or not uploaded). */
 function outdatedFiles(){
