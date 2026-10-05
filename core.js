@@ -1,4 +1,4 @@
-(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["core.js"] = "2026.10.05-1";
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["core.js"] = "2026.10.05-2";
 /* ============================================================
    core.js — sign-in, SharePoint REST helpers, shared utilities,
    tab routing, polling, and boot. Loaded before the feature files.
