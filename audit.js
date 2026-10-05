@@ -1,4 +1,4 @@
-(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["audit.js"] = "2026.10.02-3";
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["audit.js"] = "2026.10.05-1";
 /* ============================================================
    audit.js — the Audit log tab. Shows the app-wide Audit Log list
    (inquiries, activity, tracked work, admin, access, data access).
