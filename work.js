@@ -1,4 +1,4 @@
-(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["work.js"] = "2026.10.02-3";
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["work.js"] = "2026.10.05-1";
 /* ============================================================
    work.js — the Tracked work tab: multi-step items that run over
    days or weeks (e.g. a job posting).
@@ -127,12 +127,27 @@ const Work = (() => {
       if(dup) return { duplicate: dup };
     }
     const steps = Activity.templateSteps(type).map(s => ({
-      id: newStepId(), text: s.text, external: !!s.external,
+      id: newStepId(), text: s.text, external: !!s.external, ...(s.field ? { field: s.field } : {}),
       assignee: "", assigneeName: "", done: false, doneBy: "", doneOn: ""
     }));
     const now = new Date().toISOString();
-    const title = idf ? `${type.Title} — ${idf}` : `${type.Title} — ${formatDate(now)}`;
+    // 2.0: employee processes record who the case is about, and pre-fill from the roster.
+    const emp = opts.employee || null;
+    const empName = emp ? (emp[EMP_FIELDS.title] || "") : "";
+    let caseBody = {};
+    if(emp){
+      const shell = { [W.activityTypeId]: type.Id, [W.caseData]: "{}" };
+      const initial = Cases.initialValues(type, emp);
+      caseBody = {
+        [W.employeeId]: Roster.normId(emp[EMP_FIELDS.employeeId] || idf),
+        [W.employeeName]: empName,
+        ...Cases.bodyFor(shell, initial)
+      };
+      Cases.syncSteps(steps, initial);
+    }
+    const title = emp ? `${type.Title} — ${empName || idf}` : idf ? `${type.Title} — ${idf}` : `${type.Title} — ${formatDate(now)}`;
     const item = await spCreate(CONFIG.lists.workItems, {
+      ...caseBody,
       [W.title]: title.slice(0, 255),
       [W.activityTypeId]: type.Id,
       [W.activityName]: type.Title,
@@ -147,8 +162,9 @@ const Work = (() => {
       [W.steps]: JSON.stringify(steps)
     });
     items.push(item);
-    await addLog(item.Id, "Started");
+    await addLog(item.Id, emp ? `Started for ${empName || ""} (${idf})` : "Started");
     render();
+    if(typeof Cases !== "undefined") Cases.itemChanged(item);
     return { item };
   }
 
@@ -243,7 +259,7 @@ const Work = (() => {
           (inf.next.assignee ? ` <span class="tag-person">${isMe(inf.next.assignee) ? "You" : escapeHtml(inf.next.assigneeName || nameFromEmail(inf.next.assignee))}</span>` : "");
       }
       return `<tr data-work-id="${i.Id}" tabindex="0">
-        <td><div class="work-title">${escapeHtml(i[W.identifier] || i[W.title] || "")}</div><div class="muted small">${escapeHtml(i[W.activityName] || "")}</div></td>
+        <td><div class="work-title">${escapeHtml(i[W.employeeName] || i[W.identifier] || i[W.title] || "")}</div><div class="muted small">${escapeHtml(i[W.activityName] || "")}${i[W.employeeId] ? ` · ${escapeHtml(i[W.employeeId])}` : ""}</div></td>
         <td>${isMe(i[W.ownerEmail]) ? "<strong>You</strong>" : escapeHtml(i[W.ownerName] || "")}</td>
         <td><div class="progress" aria-label="${inf.done} of ${inf.total} steps done"><span style="width:${pct}%"></span></div><div class="muted small">${inf.done} of ${inf.total}</div></td>
         <td>${nextHtml}</td>
@@ -339,7 +355,7 @@ const Work = (() => {
     const open = isOpen(item);
     const pct = inf.total ? Math.round(inf.done / inf.total * 100) : 0;
 
-    document.getElementById("workModalTitle").textContent = item[W.identifier] || item[W.title] || "Work item";
+    document.getElementById("workModalTitle").textContent = item[W.employeeName] || item[W.identifier] || item[W.title] || "Work item";
     document.getElementById("workModalSub").textContent = item[W.activityName] || "";
 
     wrap.innerHTML = `
@@ -367,6 +383,8 @@ const Work = (() => {
         </label>
         <button type="button" class="btn btn-navy btn-sm" id="wkHandoffBtn">Hand off</button>
       </div>
+
+      ${Cases.sectionHtml(item, open)}
 
       <div class="work-progress">
         <div class="progress progress-lg"><span style="width:${pct}%"></span></div>
@@ -461,6 +479,7 @@ const Work = (() => {
   function wireModal(item){
     const $ = id => document.getElementById(id);
     $("wkCloseBtn").addEventListener("click", closeModal);
+    Cases.wireSection(item, saveCaseFields);
 
     if(!isOpen(item)){
       $("wkReopenBtn").addEventListener("click", reopen);
@@ -533,6 +552,8 @@ const Work = (() => {
     }finally{
       setBusy(false);
       render();
+      const changed = items.find(i => i.Id === id);
+      if(changed && typeof Cases !== "undefined") Cases.itemChanged(changed);
       if(currentId === id && isModalOpen()) renderModal();
       Activity.renderCounts();
     }
@@ -552,13 +573,44 @@ const Work = (() => {
 
   async function toggleStep(stepId, checked){
     let text = "";
-    await mutate(steps => {
+    let fieldNote = "";
+    await mutate((steps, fresh) => {
       const s = findStep(steps, stepId);
       text = s.text;
       s.done = checked;
       s.doneBy = checked ? App.user.name : "";
       s.doneOn = checked ? new Date().toISOString() : "";
-    }, null).then(ok => { if(ok) addLog(currentId, `${checked ? "Checked" : "Unchecked"}: ${text}`); });
+      // 2.0: a step linked to a case field updates the employee's record too.
+      if(s.field){
+        const f = Cases.fieldByKey(fresh, s.field);
+        if(f){
+          const cur = Cases.getValue(fresh, f);
+          let next = cur;
+          if(checked && !Cases.isFilled(cur)) next = Cases.valueForStep(f);
+          if(!checked) next = "";
+          if(next !== cur){
+            fieldNote = ` (${Cases.describeChanges(fresh, { [s.field]: next })})`;
+            return Cases.bodyFor(fresh, { [s.field]: next });
+          }
+        }
+      }
+    }, null).then(ok => { if(ok) addLog(currentId, `${checked ? "Checked" : "Unchecked"}: ${text}${fieldNote}`); });
+  }
+
+  /* 2.0: save edited case fields; linked steps follow the fields. */
+  async function saveCaseFields(changes){
+    const before = items.find(i => i.Id === currentId);
+    const summary = before ? Cases.describeChanges(before, changes) : "";
+    let stepNotes = [];
+    const ok = await mutate((steps, fresh) => {
+      const body = Cases.bodyFor(fresh, changes);
+      stepNotes = Cases.syncSteps(steps, changes);
+      return body;
+    }, null);
+    if(ok){
+      addLog(currentId, `Updated case details: ${summary}${stepNotes.length ? `. ${stepNotes.join("; ")}` : ""}`);
+      toast("Case details saved.", { type: "success" });
+    }
   }
 
   async function stepAction(stepId, act, li){
