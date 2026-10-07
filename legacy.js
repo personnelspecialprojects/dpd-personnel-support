@@ -1,4 +1,4 @@
-(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["legacy.js"] = "2026.10.05-2";
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["legacy.js"] = "2026.10.05-3";
 /* ============================================================
    legacy.js — 2.0 starter processes and the legacy spreadsheet import.
 
@@ -140,8 +140,12 @@ const Legacy = (() => {
       processKey: "phasedown", title: "DPD Phase Down", category: "Retirement", order: 300,
       fields: [
         F("start", "Phase down effective", "date", { col: "start" }),
+        F("vacationHours", "Vacation balance (hrs)", "number", { highlight: true }),
+        F("sickHours", "Sick balance (hrs)", "number", { highlight: true }),
+        F("compHours", "Comp balance (hrs)", "number", { highlight: true }),
+        F("ailHours", "AIL balance (hrs)", "number", { highlight: true }),
         F("electedHours", "Elected hours", "number"),
-        F("leaveBalances", "Leave balances", "longtext"),
+        F("leaveBalances", "Leave balance notes", "longtext"),
         F("enteredWorkday", "Entered in Workday", "yesno"),
         F("enrollmentCompleted", "Completed phase down enrollment", "yesno"),
         F("emailDepts", "Email to all departments", "yesno"),
@@ -164,6 +168,8 @@ const Legacy = (() => {
           enteredWorkday: /^entered in workday/, enrollmentCompleted: /^completed phase down/, emailDepts: /^email to all/,
           initiateWd: /^initiate wd/, letterSent: /letter sent/, estimatedDate: /^estimated phase down/, retireeStatus: /retiree status/ },
         firstName: /^employee first name/, lastName: /^employee last name/,
+        // "Vacation=120 / Sick=300.5 / Comp: 2 / AIL 8" (or V-/S-/C- shorthand) becomes four number columns.
+        transform(v){ Object.assign(v, splitBalances(v.leaveBalances)); },
         done: v => isFilled(v.retireeStatus)
       }
     },
@@ -378,6 +384,26 @@ const Legacy = (() => {
     }
   ];
 
+  /* Parse free-text leave balances into hours. Anything that isn't a recognized balance
+     stays in the notes field, so nothing typed is lost. Returns field values to merge. */
+  function splitBalances(text){
+    const s = String(text || "");
+    const out = {};
+    if(!s.trim()) return out;
+    const re = /(^|[^a-z])(vacation|vac|ail|sick|comp|v|s|c)\b\s*[-=:]?\s*(\d*\.\d+|\d+(?:\.\d*)?)/gi;
+    const keyFor = w => { w = w.toLowerCase(); return w === "ail" ? "ailHours" : w[0] === "v" ? "vacationHours" : w[0] === "s" ? "sickHours" : "compHours"; };
+    let rest = s, m, found = 0;
+    while((m = re.exec(s))){
+      const k = keyFor(m[2]);
+      if(out[k] === undefined){ out[k] = String(Number(m[3])); found++; }
+      rest = rest.replace(m[0].slice(m[1].length), " ");
+    }
+    if(!found) return out;
+    const leftover = rest.replace(/[\s,;:=\-]+/g, " ").trim();
+    out.leaveBalances = leftover;   // "" clears the notes when everything was understood
+    return out;
+  }
+
   function lsapTransform(v){
     if(isFilled(v.testStatus)) v.contacted = "Yes";
     if(/results sent/i.test(v.testStatus)) v.resultsSent = "Yes";
@@ -393,40 +419,93 @@ const Legacy = (() => {
     return Activity.types.find(t => { const d = Cases.def(t); return d && d.processKey === key; }) || null;
   }
 
+  /* Install missing starter processes, and bring installed ones up to date:
+     new starter fields are added (in their starter position) without touching
+     anything an admin changed. Then cases are migrated where a release needs it. */
   async function installStarters(){
     const btn = document.getElementById("installStartersBtn");
     const out = document.getElementById("starterResult");
     btn.disabled = true;
     let added = 0;
-    const skipped = [];
+    const updated = [];
     try{
       for(const s of STARTERS){
-        if(existingProcess(s.processKey)){ skipped.push(s.title); continue; }
-        await spCreate(CONFIG.lists.activityTypes, {
-          Title: s.title,
-          [T.category]: s.category,
-          [T.team]: TEAM_BOTH,
-          [T.inputType]: "Employee Number",
-          [T.inputLabel]: "Employee #",
-          [T.duplicateWindowDays]: 0,
-          [T.sortOrder]: s.order,
-          [T.description]: "",
-          [T.active]: true,
-          [T.checklistSteps]: JSON.stringify(s.steps),
-          [T.caseFields]: starterDef(s)
+        const t = existingProcess(s.processKey);
+        if(!t){
+          await spCreate(CONFIG.lists.activityTypes, {
+            Title: s.title,
+            [T.category]: s.category,
+            [T.team]: TEAM_BOTH,
+            [T.inputType]: "Employee Number",
+            [T.inputLabel]: "Employee #",
+            [T.duplicateWindowDays]: 0,
+            [T.sortOrder]: s.order,
+            [T.description]: "",
+            [T.active]: true,
+            [T.checklistSteps]: JSON.stringify(s.steps),
+            [T.caseFields]: starterDef(s)
+          });
+          added++;
+          continue;
+        }
+        const d = Cases.def(t);
+        const have = new Set(d.fields.map(f => f.key));
+        const missing = s.fields.filter(f => !have.has(f.key));
+        let changed = false;
+        missing.forEach(f => {
+          const idx = s.fields.indexOf(f);
+          let pos = d.fields.length;
+          for(let j = idx - 1; j >= 0; j--){
+            const k = d.fields.findIndex(x => x.key === s.fields[j].key);
+            if(k >= 0){ pos = k + 1; break; }
+          }
+          d.fields.splice(pos, 0, { ...f });
+          changed = true;
         });
-        added++;
+        // 2026.10.05: free-text leave balances became four number fields; the old text field now holds leftovers.
+        const lb = d.fields.find(f => f.key === "leaveBalances");
+        if(s.processKey === "phasedown" && lb && lb.label === "Leave balances"){ lb.label = "Leave balance notes"; changed = true; }
+        if(changed){
+          await spUpdate(CONFIG.lists.activityTypes, t.Id, { [T.caseFields]: JSON.stringify(d) });
+          updated.push(`${s.title} (${missing.length ? "added: " + missing.map(f => f.label).join(", ") : "relabeled a field"})`);
+        }
       }
       await Activity.reloadTypes();
       Cases.invalidate();
-      out.innerHTML = `<p><strong>${added} process${added === 1 ? "" : "es"} added.</strong>${skipped.length ? ` Already installed: ${escapeHtml(skipped.join(", "))}.` : ""} Set each one's team (SRU/PSU) in Activities above.</p>`;
-      if(added) audit(AUDIT_AREAS.admin, `Installed ${added} starter employee processes`, { details: STARTERS.filter(s => !skipped.includes(s.title)).map(s => s.title).join(", ") });
+      const migrated = await migrateBalances();
+      out.innerHTML = `<p><strong>${added} process${added === 1 ? "" : "es"} added${updated.length ? `, ${updated.length} updated` : ""}.</strong>
+        ${updated.length ? `<br>${updated.map(escapeHtml).join("<br>")}` : ""}
+        ${migrated ? `<br>Leave balances split into the new columns on ${migrated} Phase Down case${migrated === 1 ? "" : "s"}.` : ""}
+        ${added ? " Set each new process's team (SRU/PSU) in Activities above." : ""}
+        ${!added && !updated.length && !migrated ? " Everything is already up to date." : ""}</p>`;
+      if(added || updated.length || migrated){
+        audit(AUDIT_AREAS.admin, `Starter processes: ${added} added, ${updated.length} updated, ${migrated} Phase Down cases had leave balances split into columns`,
+          { details: updated.join("\n") });
+      }
     }catch(err){
       console.error(err);
-      out.innerHTML = `<p class="error-text">Stopped after ${added}: ${escapeHtml(err.message)}. Run the setup check; the Activity Types list may be missing the CaseFields column.</p>`;
+      out.innerHTML = `<p class="error-text">Stopped: ${escapeHtml(err.message)}. Run the setup check; then click the button again (it picks up where it left off).</p>`;
     }finally{
       btn.disabled = false;
+      renderStarterStatus();
     }
+  }
+
+  /* Phase Down cases imported before 2026.10.05 have balances as text: fill the number fields. */
+  async function migrateBalances(){
+    const t = existingProcess("phasedown");
+    if(!t) return 0;
+    const rows = await spGetAll(CONFIG.lists.workItems, filterQuery(`${W.activityTypeId} eq ${t.Id}`, "$top=2000"));
+    const todo = rows.map(r => {
+      const data = Cases.readData(r);
+      if(!data.leaveBalances || ["vacationHours", "sickHours", "compHours", "ailHours"].some(k => data[k])) return null;
+      const parts = splitBalances(data.leaveBalances);
+      return Object.keys(parts).length ? { r, parts } : null;
+    }).filter(Boolean);
+    if(!todo.length) return 0;
+    const res = await runPool(todo, ({ r, parts }) =>
+      spUpdate(CONFIG.lists.workItems, r.Id, Cases.bodyFor(r, parts)), 4);
+    return res.ok;
   }
 
   /* ---------- reading the legacy workbook ---------- */
@@ -629,14 +708,14 @@ const Legacy = (() => {
       const list = [...need.values()];
       if(list.length){
         prog.innerHTML = `<p class="muted">Adding ${list.length} people from the old records...</p>`;
-        const res = await runPool(list, r => Roster.ensureEmployee(r.id, r.first, r.last), 6);
+        const res = await runPool(list, r => Roster.ensureEmployee(r.id, r.first, r.last), 4);
         peopleAdded = res.ok;
       }
     }
 
     // 3. cases
     let closedByAge = 0;
-    const show = (d, n) => { prog.innerHTML = `<div class="progress progress-lg"><span style="width:${Math.round(d / n * 100)}%"></span></div><p class="muted small">${d.toLocaleString()} of ${n.toLocaleString()} cases saved. Keep this tab open.</p>`; };
+    const show = (d, n) => { prog.innerHTML = `<div class="progress progress-lg"><span style="width:${Math.round(d / n * 100)}%"></span></div><p class="muted small">${d.toLocaleString()} of ${n.toLocaleString()} cases saved. Keep this tab open.${throttleNote()}</p>`; };
     const res = await runPool(todo, async r => {
       const type = typeFor[r.starter.processKey];
       const emp = r.id ? Roster.find(r.id) : null;
@@ -675,7 +754,7 @@ const Legacy = (() => {
         body[W.closedBy] = "Legacy import";
       }
       await spCreate(CONFIG.lists.workItems, body);
-    }, 6, show);
+    }, 4, show);
 
     Cases.invalidate();
     await Work.refresh();
@@ -683,5 +762,5 @@ const Legacy = (() => {
     audit(AUDIT_AREAS.imports, `Imported legacy workbook ${parsed.fileName}: ${res.ok} cases created, ${already} already imported, ${closedByAge} closed by age, ${peopleAdded} people added${res.failed.length ? `, ${res.failed.length} failed` : ""}`);
   }
 
-  return { init, STARTERS, installStarters, toDay, toYes, parseSheet, findStarterForSheet };
+  return { init, STARTERS, installStarters, toDay, toYes, parseSheet, findStarterForSheet, splitBalances };
 })();
