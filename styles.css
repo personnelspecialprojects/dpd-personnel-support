@@ -73,6 +73,8 @@ p{ margin:0 0 8px; }
 }
 
 .ver{ font-variant-numeric:tabular-nums; opacity:.75; }
+.audit-queue-banner{ background:#FDECEA; color:#8E2A1F; border-bottom-color:#F1B8B0; }
+.coverage-h{ margin:16px 0 6px; font-size:14px; color:var(--navy); }
 .version-banner{
   background:#FFF6DC; color:#5C3F00; border-bottom:1px solid #E9D49A;
   padding:10px 24px; font-size:13.5px;
