@@ -1,4 +1,4 @@
-(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["setup-check.js"] = "2026.10.05-3";
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["setup-check.js"] = "2026.10.07-1";
 /* ============================================================
    setup-check.js — Admin → "Check SharePoint setup".
    Read-only. Compares every list and column the app expects
@@ -280,4 +280,155 @@ const SetupCheck = (() => {
   }
 
   return { init, run, schema };
+})();
+
+/* ============================================================
+   Audit coverage check (Admin).
+   SharePoint itself records who last changed every item and when
+   (Modified / Modified By), whatever app or tool made the change.
+   This compares those records with the Audit Log and lists every
+   change that has no matching audit entry.
+   Limits: SharePoint keeps only the LATEST change per item in these
+   fields (earlier ones are in each item's Version history), and
+   deleted items can't be seen.
+   ============================================================ */
+
+const AuditCoverage = (() => {
+  const A = AUDIT_FIELDS;
+  const MIN = 60 * 1000;
+  const NEAR = 10 * MIN;            // allows for clock differences and slow saves
+  let lastRows = [];
+  let wired = false;
+
+  function specs(){
+    const R = REQ_FIELDS, W = WORK_FIELDS, L = LOG_FIELDS;
+    return [
+      { list: CONFIG.lists.requests, label: "Inquiries", areas: [AUDIT_AREAS.inquiry],
+        select: [R.entryType], what: i => `Inquiry #${Tickets.formatId(i.Id)}: ${i.Title || ""}`,
+        // emails create inquiries through the intake flow, which isn't the portal: skip untouched intake items
+        intake: i => i[R.entryType] !== "Manual" },
+      { list: CONFIG.lists.workItems, label: "Tracked work & employee cases", areas: [AUDIT_AREAS.work, AUDIT_AREAS.inquiry],
+        bulk: true, select: [W.legacyKey], what: i => `Item #${i.Id}: ${i.Title || ""}` },
+      { list: CONFIG.lists.activityLog, label: "Activity entries", areas: [AUDIT_AREAS.activity, AUDIT_AREAS.work],
+        select: [L.activityName, L.identifier], what: i => `Entry #${i.Id}: ${i[L.activityName] || ""} ${i[L.identifier] || ""}` },
+      { list: CONFIG.lists.employees, label: "Employees", areas: [AUDIT_AREAS.employees, AUDIT_AREAS.admin],
+        bulk: true, select: [], what: i => `Employee record: ${i.Title || ""}` },
+      { list: CONFIG.lists.activityTypes, label: "Activities (setup)", areas: [AUDIT_AREAS.admin], select: [], what: i => `Activity: ${i.Title || ""}` },
+      { list: CONFIG.lists.team, label: "Team access", areas: [AUDIT_AREAS.admin], select: [], what: i => `Roster entry: ${i.Title || ""}` },
+      { list: CONFIG.lists.alertRules, label: "Aging alerts", areas: [AUDIT_AREAS.admin], select: [], what: i => `Alert rule #${i.Id}` }
+    ];
+  }
+
+  const keyOf = (email, name) => (localPart(email) || String(name || "").trim().toLowerCase());
+  const areaOf = e => e[A.area] || (e[A.ticketId] ? AUDIT_AREAS.inquiry : "");
+
+  async function fetchChanged(spec, since){
+    const base = ["Id", "Title", "Created", "Modified", "Author/Title", "Author/EMail", "Editor/Title", "Editor/EMail"];
+    const q = sel => filterQuery(`Modified ge ${odataDate(since)}`, `$select=${sel.join(",")}&$expand=Author,Editor&$top=2000`);
+    try{
+      return await spGetAll(spec.list, q(base.concat(spec.select)));
+    }catch(err){
+      if(err.status === 400 && spec.select.length) return spGetAll(spec.list, q(base));   // a column is missing: check with basics
+      throw err;
+    }
+  }
+
+  function check(item, spec, audits){
+    const t = new Date(item.Modified).getTime();
+    const editor = item.Editor || {};
+    const who = keyOf(editor.EMail, editor.Title);
+    const created = new Date(item.Created).getTime();
+    // An item created by the email intake flow and never changed since isn't a portal action.
+    const author = item.Author || {};
+    const intakeOnly = spec.intake && spec.intake(item) && Math.abs(t - created) < MIN &&
+      keyOf(author.EMail, author.Title) === who;
+    const mine = audits.filter(a => {
+      const k = keyOf(a[A.staffEmail], a[A.staffMember]);
+      return k === who || String(a[A.staffMember] || "").toLowerCase() === String(editor.Title || "").toLowerCase();
+    });
+    const refs = a => a[A.recordId] === item.Id || a[A.ticketId] === item.Id ||
+      new RegExp(`#${item.Id}(?!\\d)`).test(String(a[A.details] || ""));
+    const at = a => new Date(a[A.logTime]).getTime();
+    if(mine.some(a => spec.areas.includes(areaOf(a)) && refs(a) && Math.abs(at(a) - t) <= NEAR)) return { ok: "exact" };
+    // Actions recorded without an item number (e.g. a new alert rule, a step that also wrote an activity entry)
+    if(mine.some(a => spec.areas.includes(areaOf(a)) && Math.abs(at(a) - t) <= 3 * MIN)) return { ok: "nearby" };
+    // Bulk imports write one summary entry when they finish
+    if(spec.bulk && mine.some(a => areaOf(a) === AUDIT_AREAS.imports && at(a) >= t - 5 * MIN && at(a) <= t + 120 * MIN)) return { ok: "import" };
+    if(intakeOnly) return { skip: "intake" };
+    return { missing: true, who: editor.Title || editor.EMail || "(unknown)",
+      onRoster: App.team.some(m => localPart(m[TEAM_FIELDS.title]) === localPart(editor.EMail)) };
+  }
+
+  async function run(){
+    const btn = document.getElementById("coverageBtn");
+    const out = document.getElementById("coverageResults");
+    const days = Number(document.getElementById("coverageDays").value) || 7;
+    const since = addDays(startOfToday(), -(days - 1));
+    btn.disabled = true;
+    out.innerHTML = `<p class="muted">Reading changes and audit entries for the last ${plural(days, "day")}...</p>`;
+    try{
+      const audits = await spGetAll(CONFIG.lists.audit,
+        filterQuery(`${A.logTime} ge ${odataDate(addDays(since, -1))}`, "$top=2000"));
+      const summary = [];
+      lastRows = [];
+      for(const spec of specs()){
+        let items;
+        try{ items = await fetchChanged(spec, since); }
+        catch(err){ summary.push({ spec, error: err.message }); continue; }
+        let ok = 0, skipped = 0, missing = 0;
+        items.forEach(i => {
+          const r = check(i, spec, audits);
+          if(r.skip){ skipped++; return; }
+          if(r.ok){ ok++; return; }
+          missing++;
+          lastRows.push({ when: i.Modified, list: spec.label, what: spec.what(i), who: r.who, onRoster: r.onRoster, link: i.Id });
+        });
+        summary.push({ spec, total: items.length, ok, skipped, missing });
+      }
+      lastRows.sort((a, b) => new Date(b.when) - new Date(a.when));
+      render(summary, days);
+      const missingTotal = lastRows.length;
+      audit(AUDIT_AREAS.admin, `Ran the audit coverage check (last ${plural(days, "day")}): ${plural(missingTotal, "change")} without an audit entry`);
+    }catch(err){
+      console.error(err);
+      out.innerHTML = `<p class="error-text">The check couldn't run: ${escapeHtml(err.message)}</p>`;
+    }finally{
+      btn.disabled = false;
+    }
+  }
+
+  function render(summary, days){
+    const out = document.getElementById("coverageResults");
+    const missing = lastRows.length;
+    out.innerHTML = `
+      <div class="check-summary ${missing ? "bad" : "good"}">
+        <strong>${missing ? `${plural(missing, "change")} in the last ${plural(days, "day")} with no audit entry.` : `Every change in the last ${plural(days, "day")} has an audit entry.`}</strong>
+        ${missing ? `<button type="button" class="btn btn-ghost btn-sm" id="coverageCsv">Export list</button>` : ""}
+      </div>
+      <table class="plain"><thead><tr><th>List</th><th class="num">Changed</th><th class="num">Audited</th><th class="num">Email intake (skipped)</th><th class="num">Missing</th></tr></thead>
+      <tbody>${summary.map(s => s.error
+        ? `<tr class="static"><td>${escapeHtml(s.spec.label)}</td><td colspan="4" class="error-text">${escapeHtml(s.error)}</td></tr>`
+        : `<tr class="static"><td>${escapeHtml(s.spec.label)}</td><td class="num">${s.total}</td><td class="num">${s.ok}</td><td class="num">${s.skipped || ""}</td><td class="num${s.missing ? " error-text" : ""}">${s.missing || ""}</td></tr>`).join("")}</tbody></table>
+      ${missing ? `<h4 class="coverage-h">Changes without an audit entry</h4>
+      <div class="table-scroll"><table class="plain"><thead><tr><th>Changed</th><th>List</th><th>Item</th><th>Changed by</th></tr></thead>
+      <tbody>${lastRows.slice(0, 300).map(r => `<tr class="static"><td class="nowrap">${escapeHtml(formatDate(r.when))}</td><td>${escapeHtml(r.list)}</td><td>${escapeHtml(r.what)}</td>
+        <td>${escapeHtml(r.who)}${r.onRoster ? "" : ` <span class="muted small">(not on the portal roster: likely changed in SharePoint directly or by Power Automate)</span>`}</td></tr>`).join("")}</tbody></table></div>` : ""}
+      <p class="muted small">How to read this: SharePoint records the last change to each item and who made it, no matter how it was changed. A change counts as audited when the same person has a matching audit entry within 10 minutes. SharePoint keeps only each item's latest change in these fields; to see every earlier change, open the item in SharePoint and use <strong>Version history</strong>. Deleted items aren't shown.</p>`;
+    const csv = document.getElementById("coverageCsv");
+    if(csv) csv.addEventListener("click", () => {
+      downloadCsv(`audit-coverage-${toDateInput(new Date())}.csv`,
+        [["Changed", "List", "Item", "Changed by", "On portal roster"], ...lastRows.map(r => [formatDate(r.when), r.list, r.what, r.who, r.onRoster ? "Yes" : "No"])]);
+      audit(AUDIT_AREAS.data, `Exported the audit coverage list (${plural(lastRows.length, "row")})`);
+    });
+  }
+
+  function init(){
+    if(wired) return;
+    const btn = document.getElementById("coverageBtn");
+    if(!btn) return;
+    wired = true;
+    btn.addEventListener("click", run);
+  }
+
+  return { init, run, check };
 })();
