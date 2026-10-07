@@ -1,4 +1,4 @@
-(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["work.js"] = "2026.10.05-3";
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["work.js"] = "2026.10.07-1";
 /* ============================================================
    work.js — the Tracked work tab: multi-step items that run over
    days or weeks (e.g. a job posting).
