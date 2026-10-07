@@ -1,4 +1,4 @@
-(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["admin.js"] = "2026.10.05-3";
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["admin.js"] = "2026.10.07-1";
 /* ============================================================
    admin.js — Admin tab (visible to Role = Admin only).
    Activities: add, edit, reorder, turn on/off. Activities are
