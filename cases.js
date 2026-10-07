@@ -1,4 +1,4 @@
-(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["cases.js"] = "2026.10.05-2";
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["cases.js"] = "2026.10.05-3";
 /* ============================================================
    cases.js — 2.0 employee processes ("cases").
 
@@ -207,13 +207,17 @@ const Cases = (() => {
     return `<section class="case-section">
       ${employeeLine(item)}
       ${legacy}
-      <div class="case-grid">
-        ${fields.map(f => `
+      ${(() => {
+        const field = f => `
           <label class="case-field${f.type === "longtext" ? " wide" : ""}">
             <span class="case-label">${escapeHtml(f.label)}${linked[f.key] ? ` <span class="link-badge" title="Checking step ${linked[f.key]} fills this in">step ${linked[f.key]}</span>` : ""}</span>
             ${inputHtml(f, getValue(item, f), !open)}
-          </label>`).join("")}
-      </div>
+          </label>`;
+        const hl = fields.filter(f => f.highlight);
+        const rest = fields.filter(f => !f.highlight);
+        return (hl.length ? `<div class="case-highlight"><div class="case-grid">${hl.map(field).join("")}</div></div>` : "") +
+          `<div class="case-grid">${rest.map(field).join("")}</div>`;
+      })()}
       ${open && fields.length ? `<div class="case-actions"><button type="button" class="btn btn-navy btn-sm" id="caseSaveBtn">Save details</button><span class="muted small" id="caseSaveNote"></span></div>` : ""}
     </section>`;
   }
@@ -277,6 +281,9 @@ const Cases = (() => {
   function init(){
     if(!wired) wire();
     onView("processView", () => { renderProcessPicker(); if(currentTypeId) loadCases(currentTypeId); });
+    onView("reportsView", loadLastBackup);
+    const bb = document.getElementById("backupBtn");
+    if(bb && !bb.dataset.wired){ bb.dataset.wired = "1"; bb.addEventListener("click", exportBackup); }
   }
 
   function wire(){
@@ -359,19 +366,20 @@ const Cases = (() => {
     const head = document.getElementById("procHead");
     const body = document.getElementById("procBody");
     if(!type){ head.innerHTML = ""; body.innerHTML = ""; return; }
-    const fields = def(type).fields.filter(f => f.type !== "longtext");
+    const shown = def(type).fields.filter(f => f.type !== "longtext");
+    const fields = [...shown.filter(f => f.highlight), ...shown.filter(f => !f.highlight)];   // highlighted columns lead
     const rows = filteredCases();
     const all = cache.get(currentTypeId) || [];
     document.getElementById("procCount").textContent =
       `${rows.length} of ${all.length} cases · ${all.filter(r => (r[W.status] || "Open") === "Open").length} open`;
-    head.innerHTML = `<tr><th>Employee</th>${fields.map(f => `<th>${escapeHtml(f.label)}</th>`).join("")}<th>Checklist</th><th>Status</th><th>Owner</th></tr>`;
+    head.innerHTML = `<tr><th>Employee</th>${fields.map(f => `<th class="${f.highlight ? "hl-col" : ""}">${escapeHtml(f.label)}</th>`).join("")}<th>Checklist</th><th>Status</th><th>Owner</th></tr>`;
     body.innerHTML = rows.map(r => {
       const st = stepsOfItem(r);
       const done = st.filter(s => s.done).length;
       const status = r[W.status] || "Open";
       return `<tr data-case="${r.Id}" tabindex="0" class="${status !== "Open" ? "case-closed" : ""}">
         <td class="nowrap"><div class="inq-title">${escapeHtml(r[W.employeeName] || "(no name)")}</div><div class="muted small">${escapeHtml(r[W.employeeId] || "")}</div></td>
-        ${fields.map(f => `<td class="${f.type === "date" || f.type === "money" || f.type === "number" ? "nowrap" : ""}">${escapeHtml(display(f, getValue(r, f)))}</td>`).join("")}
+        ${fields.map(f => `<td class="${f.type === "date" || f.type === "money" || f.type === "number" ? "nowrap" : ""}${f.highlight ? " hl-col" : ""}${f.type === "number" || f.type === "money" ? " num" : ""}">${escapeHtml(display(f, getValue(r, f)))}</td>`).join("")}
         <td class="nowrap">${st.length ? `${done}/${st.length}` : "—"}</td>
         <td class="nowrap"><span class="status-badge status-${status === "Open" ? "InProgress" : status === "Completed" ? "Completed" : "Merged"}">${escapeHtml(status)}</span></td>
         <td class="nowrap small">${escapeHtml(r[W.ownerName] || "")}</td>
@@ -444,11 +452,12 @@ const Cases = (() => {
     return v || "";
   }
 
-  function sheetRows(type, cases){
+  function sheetRows(type, cases, full){
     const fields = def(type).fields;
     const tplSteps = Activity.templateSteps(type).filter(s => !s.field);   // linked steps already appear as fields
     const header = ["Employee ID", "Last Name", "First Name", ...fields.map(f => f.label),
-      ...tplSteps.map(s => s.text), "Case Status", "Owner", "Case Started", "Case Closed"];
+      ...tplSteps.map(s => s.text), "Case Status", "Owner", "Case Started", "Case Closed",
+      ...(full ? ["Checklist (all steps)", "Case #", "Imported From"] : [])];
     const rows = cases.slice().sort((a, b) => new Date(a[W.receivedDate] || a[W.startedOn]) - new Date(b[W.receivedDate] || b[W.startedOn]))
       .map(r => {
         const [last, first] = splitName(r[W.employeeName]);
@@ -460,7 +469,11 @@ const Cases = (() => {
             return s && s.done ? (s.doneOn ? new Date(s.doneOn) : "Yes") : "";
           }),
           r[W.status] || "Open", r[W.ownerName] || "",
-          r[W.startedOn] ? new Date(r[W.startedOn]) : "", r[W.closedOn] ? new Date(r[W.closedOn]) : ""];
+          r[W.startedOn] ? new Date(r[W.startedOn]) : "", r[W.closedOn] ? new Date(r[W.closedOn]) : "",
+          ...(full ? [
+            steps.map((s, i) => `${i + 1}. ${s.done ? "[x]" : "[ ]"} ${s.text}${s.done && s.doneOn ? ` (${showDay(s.doneOn)}${s.doneBy ? ", " + s.doneBy : ""})` : ""}`).join("\n"),
+            r.Id, r[W.legacyKey] ? String(r[W.legacyKey]).split("|")[1] || "" : ""
+          ] : [])];
       });
     return [header, ...rows];
   }
@@ -517,12 +530,145 @@ const Cases = (() => {
     }
   }
 
+  /* "Vacation balance (hrs) 140 · Sick balance (hrs) 312.25" for a case's highlighted fields. */
+  function highlightSummary(item){
+    return fieldsFor(item).filter(f => f.highlight)
+      .map(f => { const v = display(f, getValue(item, f)); return v ? `${f.label.replace(/\s*\(hrs\)$/i, "")}: ${v}` : ""; })
+      .filter(Boolean).join(" · ");
+  }
+
+  /* ---------- full backup (Reports tab) ----------
+     One workbook with everything needed if the app were ever unavailable:
+     About, one tab per employee process (legacy-style), Employees, other tracked work,
+     the activity log, and every case's history and notes. */
+  async function exportBackup(){
+    const btn = document.getElementById("backupBtn");
+    const status = document.getElementById("backupStatus");
+    btn.disabled = true;
+    const step = t => { status.className = "muted small"; status.textContent = t; };
+    try{
+      const X = await loadSheetJS();
+      step("Reading employee processes...");
+      const procs = processes();
+      const procIds = new Set(procs.map(t => t.Id));
+      const perProc = [];
+      for(const type of procs){
+        const cases = await spGetAll(CONFIG.lists.workItems, filterQuery(`${W.activityTypeId} eq ${type.Id}`, "$top=2000"));
+        cache.set(type.Id, cases);
+        perProc.push({ type, cases });
+      }
+      step("Reading the roster...");
+      await Roster.ready(true);
+      const emps = Roster.all.slice().sort((a, b) => String(a[EMP_FIELDS.title] || "").localeCompare(String(b[EMP_FIELDS.title] || "")));
+      step("Reading other tracked work...");
+      const otherTypes = Activity.types.filter(t => !procIds.has(t.Id) && Activity.templateSteps(t).length);
+      const other = [];
+      for(const t of otherTypes){
+        other.push(...(await spGetAll(CONFIG.lists.workItems, filterQuery(`${W.activityTypeId} eq ${t.Id}`, "$top=2000"))));
+      }
+      step("Reading the activity log...");
+      const L = LOG_FIELDS;
+      const log = (await spGetAll(CONFIG.lists.activityLog, "$top=2000")).filter(e => !e[L.voided]);
+      step("Reading case history and notes...");
+      const WL = WORKLOG_FIELDS;
+      const hist = await spGetAll(CONFIG.lists.workItemLog, "$top=2000");
+      step("Building the workbook...");
+
+      const wb = X.utils.book_new();
+      const now = new Date();
+      const totalCases = perProc.reduce((n, p) => n + p.cases.length, 0);
+      addSheet(X, wb, "About", [
+        ["Personnel Support backup"],
+        ["Created", now],
+        ["Created by", App.user.name],
+        ["Portal version", window.PS_PAGE_VERSION || ""],
+        ["SharePoint site", CONFIG.siteUrl],
+        [],
+        ["Contents", "Rows"],
+        ...perProc.map(p => [`Process: ${p.type.Title}`, p.cases.length]),
+        ["Employees (roster)", emps.length],
+        ["Other tracked work", other.length],
+        ["Activity log (one-step tasks)", log.length],
+        ["Case history and notes", hist.length],
+        [],
+        ["Each process tab lists one case per row, like the original tracking workbook. Dates are calendar dates; checklist steps show the date they were done."],
+        ["This file contains employee information. Store it where personnel records are kept, not on a personal drive."]
+      ]);
+      perProc.forEach(p => addSheet(X, wb, p.type.Title, sheetRows(p.type, p.cases, true)));
+
+      const E = EMP_FIELDS;
+      addSheet(X, wb, "Employees", [
+        ["Emp#", "Badge", "Last Name", "First Name", "Rank", "Workgroup", "Supervisor", "Hire Date (AdjSvcDate)", "Active", "Source", "Last On Roster"],
+        ...emps.map(e => [Roster.normId(e[E.employeeId]), e[E.badge] || "", e[E.lastName] || "", e[E.firstName] || "", e[E.rank] || "",
+          e[E.division] || "", e[E.supervisor] || "", e[E.hireDate] ? new Date(e[E.hireDate]) : "",
+          e[E.active] === false ? "No" : "Yes", e[E.source] || "", e[E.lastRosterDate] ? new Date(e[E.lastRosterDate]) : ""])
+      ]);
+
+      addSheet(X, wb, "Other tracked work", [
+        ["Item #", "Activity", "Name / Reference", "Status", "Owner", "Started", "Closed", "Checklist"],
+        ...other.map(r => [r.Id, r[W.activityName] || "", r[W.identifier] || r[W.title] || "", r[W.status] || "Open", r[W.ownerName] || "",
+          r[W.startedOn] ? new Date(r[W.startedOn]) : "", r[W.closedOn] ? new Date(r[W.closedOn]) : "",
+          stepsOfItem(r).map((s, i) => `${i + 1}. ${s.done ? "[x]" : "[ ]"} ${s.text}`).join("\n")])
+      ]);
+
+      addSheet(X, wb, "Activity log", [
+        ["Logged", "Category", "Activity", "Employee # / Reference", "Quantity", "Staff Member", "Entry #"],
+        ...log.sort((a, b) => new Date(a[L.loggedAt]) - new Date(b[L.loggedAt]))
+          .map(e => [e[L.loggedAt] ? new Date(e[L.loggedAt]) : "", e[L.category] || "", e[L.activityName] || "", e[L.identifier] || "",
+            Activity.qty(e), e[L.staffName] || "", e.Id])
+      ]);
+
+      addSheet(X, wb, "Case history and notes", [
+        ["When", "Case #", "Staff Member", "Entry"],
+        ...hist.sort((a, b) => (a[WL.workItemId] - b[WL.workItemId]) || (new Date(a[WL.loggedAt]) - new Date(b[WL.loggedAt])))
+          .map(h => [h[WL.loggedAt] ? new Date(h[WL.loggedAt]) : "", h[WL.workItemId], h[WL.staffName] || "", h[WL.action] || ""])
+      ]);
+
+      const stamp = `${isoDay(now)} ${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}`;
+      X.writeFile(wb, `Personnel Support BACKUP ${stamp}.xlsx`, { cellDates: true });
+      audit(AUDIT_AREAS.data, `Downloaded full backup (${procs.length} processes, ${totalCases} cases, ${emps.length} employees, ${log.length} activity entries)`);
+      status.className = "small";
+      status.textContent = `Backup downloaded: ${totalCases.toLocaleString()} cases, ${emps.length.toLocaleString()} employees, ${log.length.toLocaleString()} activity entries. Save it to the team's records folder.`;
+      lastBackup = { when: now.toISOString(), who: App.user.name };
+      renderLastBackup();
+    }catch(err){
+      console.error(err);
+      status.className = "error-text small";
+      status.textContent = `Backup didn't finish: ${err.message}`;
+    }finally{
+      btn.disabled = false;
+    }
+  }
+
+  /* "Last full backup: Oct 5, 2026 3:10 PM by Jane Doe" from the audit log (last 90 days). */
+  let lastBackup = null;
+  async function loadLastBackup(){
+    try{
+      const A = AUDIT_FIELDS;
+      const rows = await spGetAll(CONFIG.lists.audit, filterQuery(`${A.logTime} ge ${odataDate(addDays(new Date(), -90))}`, "$top=2000"));
+      const hit = rows.filter(r => /^Downloaded full backup/.test(r[A.action] || ""))
+        .sort((a, b) => new Date(b[A.logTime]) - new Date(a[A.logTime]))[0];
+      lastBackup = hit ? { when: hit[A.logTime], who: hit[A.staffMember] } : null;
+    }catch(err){ console.warn("Couldn't check the last backup:", err); }
+    renderLastBackup();
+  }
+
+  function renderLastBackup(){
+    const el = document.getElementById("backupLast");
+    if(!el) return;
+    if(!lastBackup){ el.innerHTML = `<span class="warn-text">No full backup in the last 90 days.</span>`; return; }
+    const days = daysSince(lastBackup.when);
+    el.innerHTML = `Last full backup: <strong>${escapeHtml(formatDate(lastBackup.when))}</strong> by ${escapeHtml(lastBackup.who || "")}` +
+      (days >= 30 ? ` <span class="warn-text">(${days} days ago — time for a new one)</span>` : "");
+  }
+
   function invalidate(typeId){ if(typeId) cache.delete(typeId); else cache.clear(); }
 
   return {
     init, def, isEmployeeProcess, fieldsFor, fieldByKey, linkable, getValue, readData, isFilled,
     bodyFor, valueForStep, syncSteps, display, sectionHtml, wireSection, describeChanges,
-    initialValues, startCase, itemChanged, invalidate, splitName, stepsOfItem,
+    initialValues, startCase, itemChanged, invalidate, splitName, stepsOfItem, highlightSummary,
+    exportBackup, loadLastBackup,
     showProcess(typeId){ currentTypeId = typeId; switchTab("processView"); }
   };
 })();
