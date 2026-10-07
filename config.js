@@ -1,4 +1,4 @@
-(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["config.js"] = "2026.10.05-2";
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["config.js"] = "2026.10.05-3";
 /* ============================================================
    config.js — every environment value and SharePoint column name
    lives here. If a live field check shows a different internal
