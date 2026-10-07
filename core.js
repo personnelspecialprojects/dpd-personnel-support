@@ -1,4 +1,4 @@
-(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["core.js"] = "2026.10.05-2";
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["core.js"] = "2026.10.05-3";
 /* ============================================================
    core.js — sign-in, SharePoint REST helpers, shared utilities,
    tab routing, polling, and boot. Loaded before the feature files.
@@ -230,6 +230,17 @@ async function spRequest(url, options = {}){
     }
   });
   let res = await send();
+  // SharePoint throttling (429 Too Many Requests / 503 Server Busy): wait as long as it asks, then retry.
+  // A throttled request was not processed, so retrying a create is safe.
+  for(let attempt = 1; (res.status === 429 || res.status === 503) && attempt <= 8; attempt++){
+    const asked = Number(res.headers && res.headers.get && res.headers.get("Retry-After"));
+    const wait = Math.min(120, Number.isFinite(asked) && asked > 0 ? asked : Math.min(60, 2 ** attempt)) * 1000;
+    App.throttledUntil = Date.now() + wait;
+    console.warn(`SharePoint is throttling (${res.status}); retry ${attempt} in ${wait / 1000}s`);
+    await new Promise(r => setTimeout(r, wait));
+    res = await send();
+  }
+  App.throttledUntil = 0;
   if(res.status === 401){
     // token expired mid-session — refresh silently and retry once
     try{
@@ -382,6 +393,12 @@ function loadSheetJS(){
     document.head.appendChild(s);
   });
   return sheetJsPromise;
+}
+
+/* Shown in import progress while SharePoint has asked us to wait. */
+function throttleNote(){
+  const ms = (App.throttledUntil || 0) - Date.now();
+  return ms > 0 ? ` SharePoint asked for a pause; resuming in ${Math.ceil(ms / 1000)}s.` : "";
 }
 
 /* Run `worker` over items, `size` at a time, reporting progress. Never throws; returns { ok, failed }. */
