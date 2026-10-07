@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Personnel Support</title>
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="styles.css?v=2026.10.05-3">
 <script src="https://alcdn.msauth.net/browser/2.35.0/js/msal-browser.min.js"
   onerror="this.onerror=null;var s=document.createElement('script');s.src='https://alcdn.msftauth.net/browser/2.35.0/js/msal-browser.min.js';document.head.appendChild(s);"></script>
 </head>
@@ -17,6 +17,8 @@
   </div>
   <div id="userBox"></div>
 </header>
+
+<div id="versionBanner" class="version-banner" role="alert" hidden></div>
 
 <!-- ======= Gates ======= -->
 <section id="signInScreen" class="gate">
@@ -37,29 +39,154 @@
 <!-- ======= App ======= -->
 <main id="mainApp" hidden>
   <nav class="tabs" role="tablist">
-    <button type="button" class="tab active" role="tab" aria-selected="true" data-view="logView">Log activity</button>
+    <button type="button" class="tab active" role="tab" aria-selected="true" data-view="dashView">Dashboard <span id="openInquiryBadge" class="tab-badge" hidden></span></button>
+    <button type="button" class="tab" role="tab" aria-selected="false" data-view="specialView">Special Projects Inquiries <span id="specialBadge" class="tab-badge" hidden></span></button>
+    <button type="button" class="tab" role="tab" aria-selected="false" data-view="processView">Employee processes</button>
+    <button type="button" class="tab" role="tab" aria-selected="false" data-view="employeeView">Employees</button>
     <button type="button" class="tab" role="tab" aria-selected="false" data-view="workView">Tracked work <span id="myWorkBadge" class="tab-badge" hidden></span></button>
-    <button type="button" class="tab" role="tab" aria-selected="false" data-view="ticketsView">Inquiries <span id="openInquiryBadge" class="tab-badge" hidden></span></button>
     <button type="button" class="tab" role="tab" aria-selected="false" data-view="reportsView">Reports</button>
     <button type="button" class="tab" role="tab" aria-selected="false" data-view="auditView">Audit log</button>
     <button type="button" class="tab" role="tab" aria-selected="false" data-view="adminView" data-admin-only hidden>Admin</button>
   </nav>
 
-  <!-- LOG ACTIVITY -->
-  <div class="view active" id="logView">
-    <div class="log-layout">
-      <section class="board-wrap">
-        <div class="board-head">
-          <h2>Log completed work</h2>
-          <p id="todaySummary" class="muted"></p>
+  <!-- DASHBOARD: inquiries (left) + activity logging (right) -->
+  <div class="view active" id="dashView">
+    <div class="dash">
+      <section class="dash-panel" aria-labelledby="inqHeading">
+        <div class="dash-head">
+          <div class="dash-title">
+            <h2 id="inqHeading">Inquiries</h2>
+            <span id="inqOpenCount" class="head-count"></span>
+          </div>
+          <button type="button" class="btn btn-ghost btn-sm" id="openManualEntryBtn">New manual inquiry</button>
         </div>
-        <p class="how">Type the number and press Enter. To log several at once, separate them with spaces or commas.</p>
-        <div id="board"></div>
+        <div class="dash-tools">
+          <select id="filterStatus" aria-label="Filter by status"></select>
+          <input type="text" id="searchBox" placeholder="Search name, email, title, #" aria-label="Search inquiries">
+          <label class="check small"><input type="checkbox" id="hideClosedCheckbox" checked> Open only</label>
+        </div>
+        <div class="dash-scroll">
+          <table class="data inq" id="ticketsTable">
+            <thead>
+              <tr>
+                <th data-sort="ID">#</th>
+                <th data-sort="Title">Inquiry</th>
+                <th data-sort="Received">Received</th>
+                <th data-sort="Status">Status</th>
+                <th><span class="visually-hidden">Quick actions</span></th>
+              </tr>
+            </thead>
+            <tbody id="ticketsBody"></tbody>
+          </table>
+          <div id="emptyState" class="empty-block" hidden><p>No inquiries match these filters.</p></div>
+        </div>
       </section>
-      <aside class="mine">
-        <h3>Your recent entries</h3>
-        <div id="myRecent"></div>
-      </aside>
+
+      <section class="dash-panel" aria-labelledby="logHeading">
+        <div class="dash-head">
+          <div class="dash-title"><h2 id="logHeading">Log completed work</h2></div>
+          <div class="segmented team-toggle" id="teamToggle" role="group" aria-label="Show activities for team"></div>
+        </div>
+        <div class="how">
+          <div id="todaySummary" class="today-line"></div>
+          Type the number and press Enter. To log several at once, separate them with spaces or commas.
+        </div>
+        <div class="dash-scroll">
+          <div id="board"></div>
+          <details class="mine" id="mineDetails">
+            <summary>Your recent entries <span class="muted small">(to fix a mistake)</span></summary>
+            <div id="myRecent"></div>
+          </details>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- SPECIAL PROJECT INQUIRIES: same interface as the Dashboard's inquiry panel -->
+  <div class="view" id="specialView">
+    <section class="panel special-panel" aria-labelledby="spHeading">
+      <div class="dash-head">
+        <div class="dash-title">
+          <h2 id="spHeading">Special Projects Inquiries</h2>
+          <span id="spOpenCount" class="head-count"></span>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" id="spOpenManualEntryBtn">New manual inquiry</button>
+      </div>
+      <p class="muted small sp-intro">Inquiries set aside from the Dashboard for a special project. Work them the same way: open one to update its status and notes. <strong>Move back</strong> returns an inquiry to the Dashboard.</p>
+      <div class="dash-tools">
+        <select id="spFilterStatus" aria-label="Filter by status"></select>
+        <input type="text" id="spSearchBox" placeholder="Search name, email, title, #" aria-label="Search special project inquiries">
+        <label class="check small"><input type="checkbox" id="spOpenOnly" checked> Open only</label>
+      </div>
+      <div class="table-scroll">
+        <table class="data inq" id="spTicketsTable">
+          <thead>
+            <tr>
+              <th data-sort="ID">#</th>
+              <th data-sort="Title">Inquiry</th>
+              <th data-sort="Received">Received</th>
+              <th data-sort="Status">Status</th>
+              <th><span class="visually-hidden">Quick actions</span></th>
+            </tr>
+          </thead>
+          <tbody id="spTicketsBody"></tbody>
+        </table>
+        <div id="spEmptyState" class="empty-block" hidden></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- 2.0 EMPLOYEE PROCESSES: one table per process, like the old spreadsheet tabs -->
+  <div class="view" id="processView">
+    <div id="procEmpty" class="empty-block" hidden>
+      <p><strong>No employee processes yet.</strong></p>
+      <p>An admin can install the starter processes in Admin → Employee processes.</p>
+    </div>
+    <div id="procMain">
+      <div class="toolbar">
+        <select id="procSelect" aria-label="Process"></select>
+        <select id="procStatus" aria-label="Status">
+          <option value="open">Open cases</option>
+          <option value="all">All cases</option>
+          <option value="closed">Closed cases</option>
+        </select>
+        <input type="text" id="procSearch" placeholder="Search name, employee #, any field" aria-label="Search cases">
+        <button type="button" class="btn btn-ghost btn-sm" id="procRefresh">Refresh</button>
+        <div class="toolbar-end">
+          <button type="button" class="btn btn-ghost" id="procExportOne">Export to Excel</button>
+          <button type="button" class="btn btn-ghost" id="procExportAll">Export all processes</button>
+        </div>
+      </div>
+      <div class="toolbar proc-start">
+        <label class="inline-label">Start a case for employee #
+          <input type="text" id="procStartId" inputmode="numeric" class="narrow-input wide-num" autocomplete="off">
+        </label>
+        <button type="button" class="btn btn-navy btn-sm" id="procStartBtn">Start</button>
+        <span class="save-msg" id="procStartMsg"></span>
+        <span class="muted small" id="procCount"></span>
+      </div>
+      <div class="table-scroll proc-table">
+        <table class="data">
+          <thead id="procHead"></thead>
+          <tbody id="procBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2.0 EMPLOYEES (roster) -->
+  <div class="view" id="employeeView">
+    <div class="emp-layout">
+      <section class="panel emp-search">
+        <div class="toolbar">
+          <input type="text" id="empSearch" placeholder="Name or employee #" aria-label="Search employees">
+          <label class="check small"><input type="checkbox" id="empShowInactive"> Include inactive</label>
+        </div>
+        <div class="muted small" id="empCount"></div>
+        <div id="empResults"></div>
+        <button type="button" class="link-btn" id="empAddBtn">Someone missing? Add an employee</button>
+      </section>
+      <section class="panel emp-detail" id="empDetail" hidden></section>
     </div>
   </div>
 
@@ -84,45 +211,23 @@
     <div id="workEmpty" class="empty-block" hidden></div>
   </div>
 
-  <!-- INQUIRIES -->
-  <div class="view" id="ticketsView">
-    <div class="toolbar">
-      <button type="button" class="btn btn-navy" id="openManualEntryBtn">New manual inquiry</button>
-      <select id="filterStatus" aria-label="Filter by status">
-        <option value="">All statuses</option>
-        <option value="New">New</option>
-        <option value="In Progress">In Progress</option>
-        <option value="Completed">Completed</option>
-        <option value="Merged">Merged</option>
-        <option value="No Action Required">No Action Required</option>
-      </select>
-      <input type="text" id="searchBox" placeholder="Search name, email, title, #" aria-label="Search inquiries">
-      <label class="check"><input type="checkbox" id="hideMergedCheckbox" checked> Hide merged and no-action</label>
-      <div class="stat-pills" id="statPills"></div>
-    </div>
-    <div class="table-scroll">
-      <table class="data" id="ticketsTable">
-        <thead>
-          <tr>
-            <th data-sort="ID">#</th>
-            <th data-sort="Received">Received</th>
-            <th data-sort="Title">Title</th>
-            <th data-sort="Email">Requestor</th>
-            <th data-sort="Status">Status</th>
-            <th data-sort="CompletedBy">Closed by</th>
-            <th><span class="visually-hidden">Quick actions</span></th>
-          </tr>
-        </thead>
-        <tbody id="ticketsBody"></tbody>
-      </table>
-    </div>
-    <div id="emptyState" class="empty-block" hidden><p>No inquiries match these filters.</p></div>
-  </div>
-
   <!-- REPORTS -->
   <div class="view" id="reportsView">
+    <section class="panel backup-panel">
+      <div class="panel-head">
+        <div>
+          <h3>Full backup</h3>
+          <p class="muted small">One Excel workbook with everything: each employee process on its own tab (like the original tracking workbook), the employee roster, other tracked work, the activity log, and all case history and notes. Download one regularly and save it to the team's records folder, so the records are safe even if the app is ever unavailable.</p>
+          <p class="small" id="backupLast"></p>
+        </div>
+        <button type="button" class="btn btn-navy" id="backupBtn">Download full backup</button>
+      </div>
+      <p id="backupStatus" class="muted small"></p>
+    </section>
+
     <section class="panel">
       <div class="toolbar">
+        <select id="rpTeam" aria-label="Team"><option value="">All teams</option><option value="SRU">SRU</option><option value="PSU">PSU</option></select>
         <select id="rpPreset" aria-label="Date range">
           <option value="today">Today</option>
           <option value="thisWeek">This week</option>
@@ -158,20 +263,28 @@
   <!-- AUDIT LOG -->
   <div class="view" id="auditView">
     <div class="toolbar">
-      <input type="text" id="auditSearchBox" placeholder="Search inquiry #, staff member, action" aria-label="Search audit log">
+      <select id="auditArea" aria-label="Area"><option value="">All areas</option></select>
+      <select id="auditDays" aria-label="Time period">
+        <option value="1">Today</option>
+        <option value="7">Last 7 days</option>
+        <option value="30" selected>Last 30 days</option>
+        <option value="90">Last 90 days</option>
+        <option value="365">Last year</option>
+      </select>
+      <input type="text" id="auditSearchBox" placeholder="Search staff, action, record #" aria-label="Search audit log">
       <div class="stat-pills" id="auditPills"></div>
       <div class="toolbar-end">
-        <button type="button" class="btn btn-ghost" id="exportAuditCsvBtn">Export audit log</button>
+        <button type="button" class="btn btn-ghost" id="exportAuditCsvBtn">Export</button>
       </div>
     </div>
-    <p class="muted small">Every change made to an inquiry. Activity entries keep their own history in the Activity Log list.</p>
+    <p class="muted small">Everything people do in the portal: inquiry changes, logged activity, tracked work, admin changes, sign-ins, exports and lookups.</p>
     <div class="table-scroll">
       <table class="data">
-        <thead><tr><th>Time</th><th>Inquiry #</th><th>Staff member</th><th>Action</th></tr></thead>
+        <thead><tr><th>Time</th><th>Area</th><th>Record</th><th>Staff member</th><th>Action</th></tr></thead>
         <tbody id="auditBody"></tbody>
       </table>
     </div>
-    <div id="auditEmptyState" class="empty-block" hidden><p>No audit entries match your search.</p></div>
+    <div id="auditEmptyState" class="empty-block" hidden><p>No audit entries match.</p></div>
   </div>
 
   <!-- ADMIN -->
@@ -179,8 +292,43 @@
     <section class="panel">
       <div class="panel-head">
         <div>
+          <h3>SharePoint setup check</h3>
+          <p class="muted small">Compares every list and column this app expects with what's on the SharePoint site. Run it after creating lists or changing them in SharePoint. It only reads; nothing is changed.</p>
+        </div>
+        <button type="button" class="btn btn-navy" id="runSetupCheckBtn">Check SharePoint setup</button>
+      </div>
+      <div id="setupCheckResults"></div>
+    </section>
+
+    <section class="panel">
+      <h3>Employee roster</h3>
+      <p class="muted small">Upload the monthly roster report (Excel or CSV) from the SQL report server. It's read on this computer and only the roster columns are saved to SharePoint. New people are added, changes are updated, and people no longer on the report are marked inactive (never deleted). You'll see a preview before anything is saved.</p>
+      <input type="file" id="rosterFile" accept=".xlsx,.xls,.csv" aria-label="Roster report file">
+      <div id="rosterImportArea"></div>
+    </section>
+
+    <section class="panel">
+      <h3>Employee processes</h3>
+      <p class="muted small">Ten processes built from the team's leave tracking workbook: Advanced Sick Leave, Extension of Probation &amp; Training, DPD Phase Down, Leave of Absence, Tuition Reimbursement, Paid Parental Leave, Return to Patrol, Trade Time, LSAP and LSAP Recertification. Each comes with its fields and a checklist linked to them. After installing, edit any of them under Activities below.</p>
+      <div class="toolbar">
+        <button type="button" class="btn btn-navy" id="installStartersBtn">Install or update starter processes</button>
+        <span class="muted small" id="starterStatus"></span>
+      </div>
+      <div id="starterResult"></div>
+    </section>
+
+    <section class="panel">
+      <h3>Legacy spreadsheet import</h3>
+      <p class="muted small">Bring in the old tracking workbook (all tabs). It's read on this computer; nothing is uploaded except the cases themselves to SharePoint. You'll see a preview with counts and any data problems first. Running it again skips rows already imported.</p>
+      <input type="file" id="legacyFile" accept=".xlsx,.xls" aria-label="Legacy workbook">
+      <div id="legacyArea"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
           <h3>Activities</h3>
-          <p class="muted small">Each active activity is a row on the Log activity tab. Rows are grouped by category, and the order number sets both row order and category order.</p>
+          <p class="muted small">Each active activity is a row in the logging panel on the Dashboard. Rows are grouped by category, and the order number sets both row order and category order.</p>
         </div>
         <button type="button" class="btn btn-navy" id="addTypeBtn">Add activity</button>
       </div>
@@ -210,10 +358,11 @@
 
     <section class="panel">
       <h3>Team access</h3>
-      <p class="muted small">People on this list can sign in. Matching ignores the domain, so a dallaspolice.gov or dallascityhall.com address covers both. Admins see this tab.</p>
+      <p class="muted small">People on this list can sign in. Matching ignores the domain, so a dallaspolice.gov or dallascityhall.com address covers both. Admins see this tab. A person's team sets which activities their Dashboard opens on; they can still switch.</p>
       <div class="toolbar">
         <input type="email" id="newStaffEmail" placeholder="firstname.lastname@dallaspolice.gov" class="grow-input" aria-label="Email address">
         <select id="newStaffRole" aria-label="Role"><option value="Staff">Staff</option><option value="Admin">Admin</option></select>
+        <select id="newStaffTeam" aria-label="Team"><option value="">No team</option><option value="SRU">SRU</option><option value="PSU">PSU</option></select>
         <button type="button" class="btn btn-navy" id="addStaffBtn">Add person</button>
       </div>
       <div id="staffSaveMsg" class="save-msg"></div>
@@ -245,7 +394,7 @@
         <div>
           <div class="val problem-box" id="mProblem"></div>
           <textarea id="mProblemEdit" class="problem-edit" hidden></textarea>
-          <div class="hint warn-text" id="problemEditHint" hidden>Unlocked for trimming only. Put new information in Internal notes or Customer note. Locks again when you save.</div>
+          <div class="hint warn-text" id="problemEditHint" hidden>Unlocked for trimming only. Put new information in Notes. Locks again when you save.</div>
         </div>
       </div>
       <div class="field-row">
@@ -254,7 +403,7 @@
           <a href="#" id="toggleMergeLink" class="merge-link">Duplicate or reply? Merge into another inquiry instead</a>
           <div id="mergePanel" class="merge-panel" hidden>
             <select id="mergeTargetSelect" aria-label="Original inquiry"></select>
-            <div class="hint">Closes #<span id="mergeSourceId"></span> without emailing the customer and copies its problem text into the original inquiry's internal notes.</div>
+            <div class="hint">Closes #<span id="mergeSourceId"></span> and copies its problem text into the original inquiry's notes.</div>
             <button type="button" class="btn btn-navy" id="mergeBtn">Merge and close this inquiry</button>
           </div>
         </div>
@@ -269,22 +418,11 @@
           <option value="No Action Required">No Action Required</option>
         </select>
       </div>
-      <div class="field-row" id="noNotifyRow" hidden>
-        <label></label>
-        <div>
-          <label class="check"><input type="checkbox" id="mNoNotify"> Close without emailing the customer</label>
-          <div class="hint">Use this if the customer already replied (for example, said thanks).</div>
-        </div>
-      </div>
       <div class="field-row">
-        <label for="mInternal">Internal notes</label>
-        <textarea id="mInternal" placeholder="Staff-only notes"></textarea>
-      </div>
-      <div class="field-row">
-        <label for="mCustomer">Customer note</label>
+        <label for="mInternal">Notes</label>
         <div>
-          <textarea id="mCustomer" placeholder="Emailed to the requestor when the inquiry is marked Completed"></textarea>
-          <div class="hint">Sent automatically once Status is Completed and you save.</div>
+          <textarea id="mInternal" placeholder="Staff-only notes, e.g. what was done and when you replied in Outlook"></textarea>
+          <div class="hint">Replies to the requestor are sent from Outlook. The portal never emails anyone.</div>
         </div>
       </div>
       <div class="field-row" id="completedMetaRow" hidden>
@@ -293,7 +431,8 @@
       </div>
     </div>
     <div class="modal-footer">
-      <button type="button" class="btn btn-ghost" id="mNoActionBtn" title="Close without a response. No email is sent and it doesn't count as a resolved inquiry.">No Action Required</button>
+      <button type="button" class="btn btn-ghost" id="mQueueBtn">Move to Special Projects Inquiries</button>
+      <button type="button" class="btn btn-ghost" id="mNoActionBtn" title="Close without a response. It doesn't count as a resolved inquiry.">No Action Required</button>
       <div class="save-msg" id="saveMsg"></div>
       <button type="button" class="btn btn-ghost" id="cancelBtn">Cancel</button>
       <button type="button" class="btn btn-red" id="saveBtn">Save changes</button>
@@ -330,15 +469,7 @@
           <option value="Completed">Completed</option>
         </select>
       </div>
-      <div class="field-row"><label for="meInternal">Internal notes</label><textarea id="meInternal" placeholder="Staff-only notes (optional)"></textarea></div>
-      <div class="field-row" id="meCustomerNoteRow" hidden><label for="meCustomerNote">Customer note</label><textarea id="meCustomerNote" placeholder="Emailed to the requestor if there's an email address and emailing isn't turned off below"></textarea></div>
-      <div class="field-row" id="meNoNotifyRow" hidden>
-        <label></label>
-        <div>
-          <label class="check"><input type="checkbox" id="meNoNotify" checked> Don't email the customer</label>
-          <div class="hint">Checked by default for issues resolved in person or by phone.</div>
-        </div>
-      </div>
+      <div class="field-row"><label for="meInternal">Notes</label><textarea id="meInternal" placeholder="Staff-only notes (optional)"></textarea></div>
     </div>
     <div class="modal-footer">
       <div class="save-msg" id="meSaveMsg"></div>
@@ -372,11 +503,38 @@
         </div>
       </div>
       <div class="field-row">
+        <label for="atTeam">Team</label>
+        <div>
+          <select id="atTeam"><option value="SRU">SRU</option><option value="PSU">PSU</option><option value="Both">Both teams</option></select>
+          <div class="hint">Which team's Dashboard shows this activity. "Both" shows it to everyone.</div>
+        </div>
+      </div>
+      <div class="field-row" id="atEmpProcRow">
+        <label>Employee process</label>
+        <div>
+          <label class="check"><input type="checkbox" id="atEmpProc"> Each case is about one employee (uses the roster)</label>
+          <div class="hint">Staff start a case by employee number. The case has its own fields, and checklist steps can fill them in, so the employee's record updates as the checklist is worked.</div>
+        </div>
+      </div>
+      <div class="field-row" id="atFieldsRow" hidden>
+        <label>Fields</label>
+        <div>
+          <ol class="tpl-steps field-list" id="atFields"></ol>
+          <div class="add-step">
+            <input type="text" id="atNewFieldLabel" placeholder="Add a field, e.g. Date entered in Workday">
+            <select id="atNewFieldType" aria-label="New field type"></select>
+            <button type="button" class="btn btn-ghost btn-sm" id="atAddFieldBtn">Add field</button>
+          </div>
+          <div class="hint">"Column" fields are stored in their own SharePoint column (received/start/end dates, supervisor, outcome). Everything else is stored with the case and appears in the app and in exports.</div>
+        </div>
+      </div>
+      <div class="field-row" id="atInputTypeRow">
         <label for="atInputType">Staff enter</label>
         <select id="atInputType">
           <option value="Employee Number">An employee number</option>
           <option value="Reference">A reference (letters allowed)</option>
           <option value="Click Only">Nothing, just click the button</option>
+          <option value="Count">How many they completed (a count, e.g. 115)</option>
         </select>
       </div>
       <div class="field-row" id="atInputLabelRow">
@@ -401,7 +559,7 @@
         <label for="atDescription">Helper text</label>
         <input type="text" id="atDescription" placeholder="Optional, one short line shown under the name">
       </div>
-      <div class="field-row">
+      <div class="field-row" id="atChecklistRow">
         <label>Checklist</label>
         <div>
           <div class="hint" style="margin-top:7px;">Optional. Leave empty for one-step logging. Add steps for work that runs over days or weeks: the board button becomes <strong>Start</strong>, and each item gets its own copy of these steps, which can be edited on that item.</div>
@@ -440,13 +598,24 @@
 
 <div id="toastHost" aria-live="polite"></div>
 
-<script src="config.js"></script>
-<script src="core.js"></script>
-<script src="activity.js"></script>
-<script src="work.js"></script>
-<script src="tickets.js"></script>
-<script src="reports.js"></script>
-<script src="admin.js"></script>
+<script>
+  /* Release stamp. Every .js file carries the same stamp; core.js warns if any differ
+     (an old cached or un-uploaded file). Bump it in ALL files for each release. */
+  window.PS_PAGE_VERSION = "2026.10.05-3";
+  window.PS_FILE_VERSIONS = {};
+</script>
+<script src="config.js?v=2026.10.05-3"></script>
+<script src="core.js?v=2026.10.05-3"></script>
+<script src="activity.js?v=2026.10.05-3"></script>
+<script src="work.js?v=2026.10.05-3"></script>
+<script src="tickets.js?v=2026.10.05-3"></script>
+<script src="reports.js?v=2026.10.05-3"></script>
+<script src="admin.js?v=2026.10.05-3"></script>
+<script src="audit.js?v=2026.10.05-3"></script>
+<script src="setup-check.js?v=2026.10.05-3"></script>
+<script src="roster.js?v=2026.10.05-3"></script>
+<script src="cases.js?v=2026.10.05-3"></script>
+<script src="legacy.js?v=2026.10.05-3"></script>
 <script>boot();</script>
 </body>
 </html>
