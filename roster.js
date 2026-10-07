@@ -1,4 +1,4 @@
-(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["roster.js"] = "2026.10.05-2";
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["roster.js"] = "2026.10.05-3";
 /* ============================================================
    roster.js — 2.0 employee roster.
 
@@ -157,7 +157,7 @@ const Roster = (() => {
         <tbody>${cases.map(c => {
           const st = Cases.stepsOfItem(c);
           return `<tr data-case="${c.Id}" tabindex="0" class="${(c[W.status] || "Open") !== "Open" ? "case-closed" : ""}">
-            <td class="inq-title">${escapeHtml(c[W.activityName] || "")}</td>
+            <td><div class="inq-title">${escapeHtml(c[W.activityName] || "")}</div>${Cases.highlightSummary(c) ? `<div class="hl-summary">${escapeHtml(Cases.highlightSummary(c))}</div>` : ""}</td>
             <td class="nowrap">${escapeHtml(showDay(c[W.receivedDate]))}</td>
             <td class="nowrap small">${escapeHtml([showDay(c[W.startDate]), showDay(c[W.endDate])].filter(Boolean).join(" – "))}</td>
             <td>${escapeHtml(c[W.outcome] || "")}</td>
@@ -363,9 +363,13 @@ const Roster = (() => {
       ...plan.update.map(u => () => spUpdate(CONFIG.lists.employees, u.cur.Id, { ...u.diff, [E.lastRosterDate]: now })),
       ...plan.inactivate.map(e => () => spUpdate(CONFIG.lists.employees, e.Id, { [E.active]: false }))
     ];
-    const show = (d, n) => { prog.innerHTML = `<div class="progress progress-lg"><span style="width:${Math.round(d / n * 100)}%"></span></div><p class="muted small">${d.toLocaleString()} of ${n.toLocaleString()} saved. Keep this tab open.</p>`; };
+    const show = (d, n) => { prog.innerHTML = `<div class="progress progress-lg"><span style="width:${Math.round(d / n * 100)}%"></span></div><p class="muted small">${d.toLocaleString()} of ${n.toLocaleString()} saved. Keep this tab open.${throttleNote()}</p>`; };
     show(0, jobs.length);
-    const res = await runPool(jobs, job => job(), 8, show);
+    let doneCount = 0;
+    const ticker = setInterval(() => show(Math.min(jobs.length, doneCount), jobs.length), 1000);   // keeps the pause countdown fresh
+    // 4 at a time keeps a 4,000-person first import under SharePoint's throttling limits; 429s are retried anyway.
+    const res = await runPool(jobs, job => job(), 4, d => { doneCount = d; show(d, jobs.length); });
+    clearInterval(ticker);
     await ready(true);
     prog.innerHTML = `<p class="${res.failed.length ? "warn-text" : ""}"><strong>Roster updated.</strong> ${res.ok.toLocaleString()} saved${res.failed.length ? `, ${res.failed.length} failed (${escapeHtml(res.failed[0].err.message)}). Run the import again to retry; it only changes what's still different.` : "."}</p>`;
     audit(AUDIT_AREAS.imports, `Imported roster from ${parsed.fileName}: ${plan.create.length} added, ${plan.update.length} updated, ${plan.inactivate.length} marked inactive${plan.dups ? `, ${plan.dups} duplicate Emp# rows skipped` : ""}${res.failed.length ? `, ${res.failed.length} failed` : ""}`);
