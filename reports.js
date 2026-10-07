@@ -1,4 +1,4 @@
-(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["reports.js"] = "2026.10.05-3";
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["reports.js"] = "2026.10.07-1";
 /* ============================================================
    reports.js — activity counts by person and task for any date
    range, plus inquiries resolved, exports, and a lookup that
