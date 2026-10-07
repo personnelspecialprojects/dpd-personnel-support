@@ -1,4 +1,4 @@
-(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["cases.js"] = "2026.10.05-3";
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["cases.js"] = "2026.10.07-1";
 /* ============================================================
    cases.js — 2.0 employee processes ("cases").
 
