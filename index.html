@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Personnel Support</title>
-<link rel="stylesheet" href="styles.css?v=2026.10.05-3">
+<link rel="stylesheet" href="styles.css?v=2026.10.07-1">
 <script src="https://alcdn.msauth.net/browser/2.35.0/js/msal-browser.min.js"
   onerror="this.onerror=null;var s=document.createElement('script');s.src='https://alcdn.msftauth.net/browser/2.35.0/js/msal-browser.min.js';document.head.appendChild(s);"></script>
 </head>
@@ -298,6 +298,25 @@
         <button type="button" class="btn btn-navy" id="runSetupCheckBtn">Check SharePoint setup</button>
       </div>
       <div id="setupCheckResults"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h3>Audit coverage check</h3>
+          <p class="muted small">SharePoint records who last changed every item, however it was changed. This compares those records with the audit log and lists any change that has no audit entry. It only reads; nothing is changed.</p>
+        </div>
+        <div class="toolbar">
+          <select id="coverageDays" aria-label="Period">
+            <option value="1">Today</option>
+            <option value="7" selected>Last 7 days</option>
+            <option value="30">Last 30 days</option>
+            <option value="90">Last 90 days</option>
+          </select>
+          <button type="button" class="btn btn-navy" id="coverageBtn">Check audit coverage</button>
+        </div>
+      </div>
+      <div id="coverageResults"></div>
     </section>
 
     <section class="panel">
@@ -601,21 +620,21 @@
 <script>
   /* Release stamp. Every .js file carries the same stamp; core.js warns if any differ
      (an old cached or un-uploaded file). Bump it in ALL files for each release. */
-  window.PS_PAGE_VERSION = "2026.10.05-3";
+  window.PS_PAGE_VERSION = "2026.10.07-1";
   window.PS_FILE_VERSIONS = {};
 </script>
-<script src="config.js?v=2026.10.05-3"></script>
-<script src="core.js?v=2026.10.05-3"></script>
-<script src="activity.js?v=2026.10.05-3"></script>
-<script src="work.js?v=2026.10.05-3"></script>
-<script src="tickets.js?v=2026.10.05-3"></script>
-<script src="reports.js?v=2026.10.05-3"></script>
-<script src="admin.js?v=2026.10.05-3"></script>
-<script src="audit.js?v=2026.10.05-3"></script>
-<script src="setup-check.js?v=2026.10.05-3"></script>
-<script src="roster.js?v=2026.10.05-3"></script>
-<script src="cases.js?v=2026.10.05-3"></script>
-<script src="legacy.js?v=2026.10.05-3"></script>
+<script src="config.js?v=2026.10.07-1"></script>
+<script src="core.js?v=2026.10.07-1"></script>
+<script src="activity.js?v=2026.10.07-1"></script>
+<script src="work.js?v=2026.10.07-1"></script>
+<script src="tickets.js?v=2026.10.07-1"></script>
+<script src="reports.js?v=2026.10.07-1"></script>
+<script src="admin.js?v=2026.10.07-1"></script>
+<script src="audit.js?v=2026.10.07-1"></script>
+<script src="setup-check.js?v=2026.10.07-1"></script>
+<script src="roster.js?v=2026.10.07-1"></script>
+<script src="cases.js?v=2026.10.07-1"></script>
+<script src="legacy.js?v=2026.10.07-1"></script>
 <script>boot();</script>
 </body>
 </html>
