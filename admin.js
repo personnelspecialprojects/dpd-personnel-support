@@ -1,4 +1,4 @@
-(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["admin.js"] = "2026.10.05-2";
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["admin.js"] = "2026.10.05-3";
 /* ============================================================
    admin.js — Admin tab (visible to Role = Admin only).
    Activities: add, edit, reorder, turn on/off. Activities are
@@ -253,6 +253,7 @@ const Admin = (() => {
           <option value="">Stored with the case</option>
           ${cols.map(([k, l]) => `<option value="${k}"${f.col === k ? " selected" : ""}>Column: ${escapeHtml(l)}</option>`).join("")}
         </select>
+        <label class="check small" title="Show this field prominently: first in the case window and first in the process table"><input type="checkbox" class="fd-hl" ${f.highlight ? "checked" : ""}> Highlight</label>
         <input type="text" class="fd-options" value="${escapeHtml((f.options || []).join(", "))}" placeholder="Choices, separated by commas" ${f.type === "choice" ? "" : "hidden"}>
         <button type="button" class="icon-btn" data-act="up" ${i === 0 ? "disabled" : ""} aria-label="Move up">↑</button>
         <button type="button" class="icon-btn" data-act="down" ${i === caseDef.fields.length - 1 ? "disabled" : ""} aria-label="Move down">↓</button>
@@ -269,6 +270,7 @@ const Admin = (() => {
         renderCaseFields(); renderTplSteps();
       });
       li.querySelector(".fd-col").addEventListener("change", e => { if(e.target.value) f.col = e.target.value; else delete f.col; });
+      li.querySelector(".fd-hl").addEventListener("change", e => { if(e.target.checked) f.highlight = true; else delete f.highlight; });
       li.querySelector(".fd-options").addEventListener("input", e => {
         f.options = e.target.value.split(",").map(x => x.trim()).filter(Boolean);
       });
