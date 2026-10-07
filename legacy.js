@@ -1,4 +1,4 @@
-(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["legacy.js"] = "2026.10.05-3";
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["legacy.js"] = "2026.10.07-1";
 /* ============================================================
    legacy.js — 2.0 starter processes and the legacy spreadsheet import.
 
