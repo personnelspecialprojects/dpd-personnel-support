@@ -1,4 +1,4 @@
-(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["core.js"] = "2026.10.05-3";
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["core.js"] = "2026.10.07-1";
 /* ============================================================
    core.js — sign-in, SharePoint REST helpers, shared utilities,
    tab routing, polling, and boot. Loaded before the feature files.
@@ -129,6 +129,7 @@ async function startSession(account){
   document.getElementById("signOutBtn").addEventListener("click", signOut);
 
   showGate(null);
+  loadAuditQueue();
   // Once per browser session, so page reloads don't flood the log.
   let loggedThisSession = false;
   try{ loggedThisSession = sessionStorage.getItem("ps-signin-logged") === App.user.key; }catch(_){}
@@ -155,6 +156,7 @@ async function startSession(account){
   safeInit("Cases", () => Cases.init());
   if(App.isAdmin) safeInit("Legacy import", () => Legacy.init());
   if(App.isAdmin) safeInit("Setup check", () => SetupCheck.init());
+  if(App.isAdmin) safeInit("Audit coverage", () => AuditCoverage.init());
   markSynced();
   startPolling();
 }
@@ -179,6 +181,8 @@ async function poll(){
     console.warn("Token refresh failed; will retry next cycle.", err);
     return;
   }
+  checkForNewRelease();
+  if(auditQueue.length) flushAuditQueue();
   const results = await Promise.allSettled([Activity.refresh(), Work.refresh(), Tickets.refresh(), Audit.refresh()]);
   results.forEach(r => { if(r.status === "rejected") console.warn("Refresh problem:", r.reason); });
   markSynced();
@@ -264,6 +268,8 @@ async function getDigest(force){
 }
 
 async function spWrite(url, method, body){
+  // Never save from code we know is mismatched or replaced: changes could land without audit entries.
+  if(App.blockWrites) throw new Error(App.blockWrites);
   const attempt = async (forceDigest) => {
     const digest = await getDigest(forceDigest);
     const headers = {
@@ -357,16 +363,100 @@ async function writeAudit(area, entry = {}, opts = {}){
     if(typeof Audit !== "undefined") Audit.add(row);
     return row;
   }catch(err){
-    console.error("Audit log entry failed to save:", err, body);
-    if(!opts.silent && Date.now() - auditErrorShownAt > 60000){
-      auditErrorShownAt = Date.now();
-      toast(`Your change saved, but its audit log entry didn't (${err.message}). ` +
-        `Let ${CONFIG.adminContact} know; the setup check in Admin will show what's wrong.`,
-        { type: "error", duration: 0 });
-    }
+    console.error("Audit log entry failed to save; queued for retry:", err, body);
+    if(opts.silent) return null;   // e.g. access-denied attempts by people without list access
+    queueAudit(body, err);
     return null;
   }
 }
+
+/* ---------------- Audit retry queue ----------------
+   An audit entry that can't be saved is never dropped. It's kept in this
+   browser (localStorage, per user), retried every 30 seconds and after the
+   next sign-in, and a banner stays up until every entry is saved. */
+
+let auditQueue = [];
+let auditFlushTimer = null;
+let auditFlushing = false;
+
+function auditQueueKey(){ return `ps-audit-queue:${App.user ? App.user.key : "unknown"}`; }
+
+function loadAuditQueue(){
+  try{ auditQueue = JSON.parse(localStorage.getItem(auditQueueKey()) || "[]"); }catch(_){ auditQueue = []; }
+  if(!Array.isArray(auditQueue)) auditQueue = [];
+  App.auditStorageOk = true;
+  renderAuditQueue();
+  if(auditQueue.length) scheduleAuditFlush(2000);
+}
+
+function saveAuditQueue(){
+  try{
+    localStorage.setItem(auditQueueKey(), JSON.stringify(auditQueue.slice(-500)));
+    App.auditStorageOk = true;
+  }catch(_){ App.auditStorageOk = false; }
+  renderAuditQueue();
+}
+
+function queueAudit(body, err){
+  auditQueue.push({ body, lastError: err ? err.message : "", tries: 1, firstTry: new Date().toISOString() });
+  saveAuditQueue();
+  scheduleAuditFlush(30000);
+}
+
+function scheduleAuditFlush(ms){
+  if(auditFlushTimer) return;
+  auditFlushTimer = setTimeout(() => { auditFlushTimer = null; flushAuditQueue(); }, ms);
+}
+
+async function flushAuditQueue(){
+  if(auditFlushing || !auditQueue.length || !App.user) return;
+  if(App.blockWrites) return;   // saved after reload, from current code
+  auditFlushing = true;
+  const pending = auditQueue.slice();
+  const still = [];
+  for(const q of pending){
+    try{
+      const row = await spCreate(CONFIG.lists.audit, q.body);
+      if(typeof Audit !== "undefined") Audit.add(row);
+    }catch(err){
+      q.tries++;
+      q.lastError = err.message;
+      still.push(q);
+    }
+  }
+  // keep anything queued while we were flushing
+  auditQueue = still.concat(auditQueue.slice(pending.length));
+  auditFlushing = false;
+  saveAuditQueue();
+  if(auditQueue.length) scheduleAuditFlush(30000);
+  else toast("All waiting audit log entries have been saved.", { type: "success" });
+}
+
+function renderAuditQueue(){
+  let bar = document.getElementById("auditQueueBanner");
+  if(!bar){
+    bar = document.createElement("div");
+    bar.id = "auditQueueBanner";
+    bar.className = "version-banner audit-queue-banner";
+    bar.setAttribute("role", "alert");
+    document.body.insertBefore(bar, document.body.firstChild.nextSibling);
+  }
+  if(!auditQueue.length){ bar.hidden = true; return; }
+  const last = auditQueue[auditQueue.length - 1];
+  bar.hidden = false;
+  bar.innerHTML = `<strong>${plural(auditQueue.length, "audit log entry", "audit log entries")} waiting to save.</strong> ` +
+    `Your work is saved; its audit record will be saved automatically when SharePoint accepts it` +
+    `${App.auditStorageOk === false ? `. <strong>This browser can't store them, so don't close or reload this page until this message clears.</strong>` : ". It's safe to keep working."} ` +
+    `<span class="muted small">Last error: ${escapeHtml(last.lastError || "unknown")}.</span> ` +
+    `<button type="button" class="link-btn" id="auditRetryNow">Retry now</button>` +
+    (auditQueue.some(q => q.tries >= 5) ? ` If this keeps failing, let ${escapeHtml(CONFIG.adminContact)} know.` : "");
+  const btn = document.getElementById("auditRetryNow");
+  if(btn) btn.addEventListener("click", () => flushAuditQueue());
+}
+
+window.addEventListener("beforeunload", e => {
+  if(auditQueue.length && App.auditStorageOk === false){ e.preventDefault(); e.returnValue = ""; }
+});
 
 /* Shorthand: audit(AUDIT_AREAS.activity, "Logged ...", { recordId, details }) */
 function audit(area, action, extra = {}){
@@ -596,23 +686,76 @@ function closeOverlay(id){ document.getElementById(id).classList.remove("active"
 const PS_EXPECTED_FILES = ["config.js", "core.js", "activity.js", "work.js", "tickets.js",
   "reports.js", "admin.js", "audit.js", "setup-check.js", "roster.js", "cases.js", "legacy.js"];
 
-/* Files whose release stamp doesn't match the page (old cached copy, or not uploaded). */
+/* Files whose release stamp doesn't match (old cached copy, not uploaded, or not loaded).
+   An index.html without a stamp, or with a different one than core.js, is itself out of date. */
 function outdatedFiles(){
   const page = window.PS_PAGE_VERSION;
   const have = window.PS_FILE_VERSIONS || {};
-  if(!page) return [];
-  return PS_EXPECTED_FILES.filter(f => have[f] !== page);
+  const ref = page || have["core.js"];
+  const bad = PS_EXPECTED_FILES.filter(f => have[f] !== ref);
+  if(!page || page !== have["core.js"]) bad.unshift("index.html");
+  return [...new Set(bad)];
+}
+
+function versionBar(){
+  let bar = document.getElementById("versionBanner");
+  if(!bar){   // an old index.html has no banner element; make one
+    bar = document.createElement("div");
+    bar.id = "versionBanner";
+    bar.className = "version-banner";
+    bar.setAttribute("role", "alert");
+    bar.style.cssText = "background:#FFF6DC;color:#5C3F00;border-bottom:1px solid #E9D49A;padding:10px 24px;font-size:13.5px;";
+    document.body.insertBefore(bar, document.body.firstChild);
+  }
+  return bar;
 }
 
 function checkVersions(){
   const bad = outdatedFiles();
   if(!bad.length) return;
   console.warn("Out-of-date files:", bad, "page version", window.PS_PAGE_VERSION, window.PS_FILE_VERSIONS);
-  const bar = document.getElementById("versionBanner");
-  bar.innerHTML = `<strong>Part of the portal is out of date:</strong> ${bad.map(escapeHtml).join(", ")}. ` +
+  App.blockWrites = "The portal's files don't match (some are out of date), so saving is turned off. Press Ctrl+F5 to reload.";
+  const bar = versionBar();
+  bar.innerHTML = `<strong>Part of the portal is out of date: ${bad.map(escapeHtml).join(", ")}.</strong> ` +
+    `Saving is turned off until this is fixed, so nothing is changed without an audit record. ` +
     `Press <kbd>Ctrl</kbd>+<kbd>F5</kbd> to reload. If this message stays, ` +
-    `let ${escapeHtml(CONFIG.adminContact)} know: the latest ${bad.length === 1 ? "copy of that file needs" : "copies of those files need"} to be uploaded to GitHub.`;
+    `let ${escapeHtml(CONFIG.adminContact)} know: the latest ${bad.length === 1 ? "copy of that file needs" : "copies of those files need"} to be uploaded to GitHub` +
+    `${bad.includes("index.html") ? " (index.html goes at the top level of the repo)" : ""}.`;
   bar.hidden = false;
+}
+
+/* ---------------- Stale-tab detection ----------------
+   A tab left open keeps running the code it loaded with. Every few minutes
+   (and when the tab comes back into view) the app checks whether a newer
+   release has been uploaded; if so it stops saving and asks for a reload. */
+
+let lastReleaseCheck = 0;
+
+async function checkForNewRelease(force){
+  if(App.stale || !window.PS_PAGE_VERSION) return;
+  const since = Date.now() - lastReleaseCheck;
+  if(since < (force ? 30 * 1000 : 3 * 60 * 1000)) return;
+  lastReleaseCheck = Date.now();
+  try{
+    const url = new URL("index.html", location.href);
+    url.search = `check=${Date.now()}`;
+    const res = await fetch(url.href, { cache: "no-store" });
+    if(!res.ok) return;
+    const m = /PS_PAGE_VERSION\s*=\s*"([^"]+)"/.exec(await res.text());
+    if(m && m[1] !== window.PS_PAGE_VERSION) markStale(m[1]);
+  }catch(_){ /* offline or blocked: try again later */ }
+}
+
+function markStale(newVersion){
+  App.stale = true;
+  App.blockWrites = `A newer version of the portal (${newVersion}) has been uploaded. Reload the page to keep working; your changes weren't saved.`;
+  const bar = versionBar();
+  bar.innerHTML = `<strong>A newer version of the portal has been uploaded (${escapeHtml(newVersion)}).</strong> ` +
+    `This page is running ${escapeHtml(window.PS_PAGE_VERSION)}, so saving is turned off. ` +
+    `Finish reading, then <button type="button" class="btn btn-navy btn-sm" id="staleReloadBtn">Reload now</button>`;
+  bar.hidden = false;
+  document.getElementById("staleReloadBtn").addEventListener("click", () => location.reload());
+  audit(AUDIT_AREAS.access, `Open page was running an old version (${window.PS_PAGE_VERSION}); asked to reload for ${newVersion}`);
 }
 
 function boot(){
@@ -628,7 +771,11 @@ function boot(){
       if(closer) closer.click(); else open.classList.remove("active");
     }
   });
-  document.addEventListener("visibilitychange", () => { if(!document.hidden && App.user) poll(); });
+  document.addEventListener("visibilitychange", () => {
+    if(document.hidden) return;
+    checkForNewRelease(true);
+    if(App.user) poll();
+  });
   showGate("signInScreen");
   tryResumeSession();
 }
