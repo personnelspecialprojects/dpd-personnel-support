@@ -1,4 +1,4 @@
-(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["setup-check.js"] = "2026.10.07-1";
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["setup-check.js"] = "2026.10.08-1";
 /* ============================================================
    setup-check.js — Admin → "Check SharePoint setup".
    Read-only. Compares every list and column the app expects
@@ -48,7 +48,7 @@ const SetupCheck = (() => {
         [R.status, "Choice", { index: true, choices: ["New", "In Progress", "Completed", "Merged", NO_ACTION_STATUS] }],
         [R.receivedOn, "DateTime", { index: true, time: true }],
         [R.entryType, "Choice", { choices: ["Automated", "Manual"] }],
-        [R.source, "Choice", { choices: ["Email", "Phone", "Walk-in"] }],
+        [R.source, "Choice", { choices: ["Email", "Phone", "Walk-in", "ServiceNow"] }], [R.serviceNow, "Text"],
         [R.requesterName, "Text"], [R.phoneNumber, "Text"], [R.queue, "Text"]
       ]},
       { list: CONFIG.lists.audit, purpose: "the audit log", renamedFrom: "Request Audit Log", fields: [
