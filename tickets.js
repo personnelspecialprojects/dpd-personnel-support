@@ -1,4 +1,4 @@
-(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["tickets.js"] = "2026.10.07-1";
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["tickets.js"] = "2026.10.08-1";
 /* ============================================================
    tickets.js — the Inquiries tab, Audit Log tab, and aging alert
    rules. Ported from the Secondary Employment Support Portal,
@@ -88,7 +88,7 @@ const Tickets = (() => {
     on("manualEntryClose", "click", () => closeOverlay("manualEntryOverlay"));
     on("meCancelBtn", "click", () => closeOverlay("manualEntryOverlay"));
     on("meSaveBtn", "click", createManualEntry);
-    ["meMethodPhone", "meMethodEmail", "meMethodWalkin"].forEach(id => on(id, "change", updateMethodFields));
+    ["meMethodPhone", "meMethodEmail", "meMethodWalkin", "meMethodSn"].forEach(id => on(id, "change", updateMethodFields));
 
 
 
@@ -297,7 +297,7 @@ const Tickets = (() => {
       if(openOnly && !status && !isOpenStatus(s)) return false;   // a chosen status overrides "Open only"
       if(status && s !== status) return false;
       if(search){
-        const hay = `${t.Title || ""} ${t[R.email] || ""} ${t[R.requesterName] || ""} ${formatTicketId(t.Id)}`.toLowerCase();
+        const hay = `${t.Title || ""} ${t[R.email] || ""} ${t[R.requesterName] || ""} ${t[R.serviceNow] || ""} ${formatTicketId(t.Id)}`.toLowerCase();
         if(!hay.includes(search)) return false;
       }
       return true;
@@ -350,7 +350,8 @@ const Tickets = (() => {
     body.innerHTML = list.map(t => {
       const s = statusOf(t);
       const color = alertColor(t);
-      const who = t[R.requesterName] || t[R.email] || (t[R.phoneNumber] ? `Phone: ${t[R.phoneNumber]}` : "");
+      const who = [t[R.requesterName] || t[R.email] || (t[R.phoneNumber] ? `Phone: ${t[R.phoneNumber]}` : ""),
+        t[R.serviceNow] ? `ServiceNow ${t[R.serviceNow]}` : ""].filter(Boolean).join(" · ");
       const moveBtn = key === "special"
         ? `<button type="button" class="btn-noaction" data-move="${t.Id}" data-to="main" title="Move back to the Dashboard inquiries">Move back</button>`
         : `<button type="button" class="btn-noaction btn-special" data-move="${t.Id}" data-to="special" title="Move to the ${escapeHtml(SPECIAL_QUEUE)} tab">Special Projects</button>`;
@@ -453,7 +454,8 @@ const Tickets = (() => {
     $("modalTitle").textContent = `Inquiry #${formatTicketId(id)}${inSpecial ? ` · ${SPECIAL_QUEUE}` : ""}`;
     $("mQueueBtn").textContent = inSpecial ? "Move back to Inquiries" : `Move to ${SPECIAL_QUEUE}`;
     $("mReq").textContent = t.Title || "";
-    $("mEmail").textContent = t[R.email] || (t[R.phoneNumber] ? `Phone: ${t[R.phoneNumber]}` : "");
+    $("mEmail").textContent = t[R.serviceNow] ? `ServiceNow case ${t[R.serviceNow]}`
+      : t[R.email] || (t[R.phoneNumber] ? `Phone: ${t[R.phoneNumber]}` : "");
     $("mCreated").textContent = formatDate(t[R.receivedOn]);
     $("mProblem").innerHTML = formatProblemHtml(t[R.problem]);
     $("mProblemEdit").value = original.problem;
@@ -716,7 +718,7 @@ const Tickets = (() => {
     const $ = id => document.getElementById(id);
     $("meTitleHeading").textContent = manualQueue === "special" ? `New manual inquiry (${SPECIAL_QUEUE})` : "New manual inquiry";
     $("meMethodPhone").checked = true;
-    ["meRequesterName", "mePhoneNumber", "meEmail", "meTitle", "meDescription", "meInternal"]
+    ["meRequesterName", "mePhoneNumber", "meEmail", "meSnNumber", "meTitle", "meDescription", "meInternal"]
       .forEach(id => { $(id).value = ""; });
     $("meStatus").value = "New";
     $("meSaveMsg").textContent = "";
@@ -726,26 +728,34 @@ const Tickets = (() => {
   }
 
   function updateMethodFields(){
-    const isPhone = document.getElementById("meMethodPhone").checked;
-    document.getElementById("mePhoneRow").hidden = !isPhone;
-    document.getElementById("meEmailRow").hidden = isPhone;
+    const method = [...document.getElementsByName("meMethod")].find(r => r.checked)?.value || "Phone";
+    document.getElementById("mePhoneRow").hidden = method !== "Phone";
+    document.getElementById("meEmailRow").hidden = method !== "Email" && method !== "Walk-in";
+    document.getElementById("meSnRow").hidden = method !== "ServiceNow";
   }
 
   async function createManualEntry(){
     const $ = id => document.getElementById(id);
     const method = [...document.getElementsByName("meMethod")].find(r => r.checked)?.value || "Phone";
     const isPhone = method === "Phone";
+    const isSn = method === "ServiceNow";
     const name = $("meRequesterName").value.trim();
     const phone = $("mePhoneNumber").value.trim();
     const email = $("meEmail").value.trim();
+    const snNumber = $("meSnNumber").value.replace(/\s+/g, "").toUpperCase();
     const title = $("meTitle").value.trim();
     const description = $("meDescription").value.trim();
     const status = $("meStatus").value;
     const internal = $("meInternal").value;
 
     if(!name || !title || !description){ toast("Requestor name, problem title, and description are required.", { type: "error" }); return; }
-    if(isPhone && !phone){ toast("Enter a phone number, or switch the support method to Email or Walk-in.", { type: "error" }); return; }
-    if(!isPhone && !email){ toast(`Enter an email address for this ${method.toLowerCase()} contact.`, { type: "error" }); return; }
+    if(isPhone && !phone){ toast("Enter a phone number, or choose another contact method.", { type: "error" }); return; }
+    if(isSn && !snNumber){ toast("Enter the ServiceNow case number.", { type: "error" }); $("meSnNumber").focus(); return; }
+    if(!isPhone && !isSn && !email){ toast(`Enter an email address for this ${method.toLowerCase()} contact.`, { type: "error" }); return; }
+    if(isSn){
+      const dup = tickets.find(t => String(t[R.serviceNow] || "").toUpperCase() === snNumber);
+      if(dup && !confirm(`Inquiry #${formatTicketId(dup.Id)} already has ServiceNow case ${snNumber} (${statusOf(dup)}). Create another inquiry for it anyway?`)) return;
+    }
 
     const btn = $("meSaveBtn");
     const msg = $("meSaveMsg");
@@ -756,7 +766,7 @@ const Tickets = (() => {
     const body = {
       Title: title,
       [R.problem]: description,
-      [R.email]: isPhone ? "" : email,
+      [R.email]: isPhone || isSn ? "" : email,
       [R.receivedOn]: now,
       [R.status]: status,
       [R.internalNotes]: internal,
@@ -764,6 +774,7 @@ const Tickets = (() => {
       [R.source]: method,
       [R.requesterName]: name,
       [R.phoneNumber]: isPhone ? phone : "",
+      ...(isSn ? { [R.serviceNow]: snNumber } : {}),
       [R.completed]: status === "Completed"
     };
     if(manualQueue === "special") body[R.queue] = SPECIAL_QUEUE;
@@ -776,7 +787,7 @@ const Tickets = (() => {
       await postAudit({
         Title: `Inquiry #M${created.Id}`,
         [A.ticketId]: created.Id, [A.staffMember]: App.user.name, [A.logTime]: now,
-        [A.action]: `Manual inquiry created (${method})${manualQueue === "special" ? ` in ${SPECIAL_QUEUE}` : ""}${status === "Completed" ? " and closed" : ""}`,
+        [A.action]: `Manual inquiry created (${isSn ? `ServiceNow ${snNumber}` : method})${manualQueue === "special" ? ` in ${SPECIAL_QUEUE}` : ""}${status === "Completed" ? " and closed" : ""}`,
         [A.previousStatus]: "", [A.newStatus]: status,
         [A.internalNotesSnapshot]: internal,
         [A.problemSnapshot]: description
