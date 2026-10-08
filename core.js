@@ -1,4 +1,4 @@
-(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["core.js"] = "2026.10.07-1";
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["core.js"] = "2026.10.08-1";
 /* ============================================================
    core.js — sign-in, SharePoint REST helpers, shared utilities,
    tab routing, polling, and boot. Loaded before the feature files.
@@ -683,18 +683,24 @@ function closeOverlay(id){ document.getElementById(id).classList.remove("active"
 
 /* ---------------- Version check ---------------- */
 
-const PS_EXPECTED_FILES = ["config.js", "core.js", "activity.js", "work.js", "tickets.js",
-  "reports.js", "admin.js", "audit.js", "setup-check.js", "roster.js", "cases.js", "legacy.js"];
+/* Each release lists, in index.html, the version every file should have
+   (window.PS_EXPECTED_VERSIONS). Files that didn't change in a release keep
+   their old version, so only the changed files need to be uploaded. */
+const PS_EXPECTED_FILES = ["activity.js", "admin.js", "audit.js", "cases.js", "config.js", "core.js",
+  "legacy.js", "reports.js", "roster.js", "setup-check.js", "tickets.js", "work.js"];
 
-/* Files whose release stamp doesn't match (old cached copy, not uploaded, or not loaded).
-   An index.html without a stamp, or with a different one than core.js, is itself out of date. */
+/* Files whose version doesn't match what index.html expects (an old saved copy, a file
+   not uploaded, or a paste that didn't take). A file with a copy/paste error never runs,
+   so it shows up here too. */
 function outdatedFiles(){
   const page = window.PS_PAGE_VERSION;
   const have = window.PS_FILE_VERSIONS || {};
-  const ref = page || have["core.js"];
-  const bad = PS_EXPECTED_FILES.filter(f => have[f] !== ref);
-  if(!page || page !== have["core.js"]) bad.unshift("index.html");
-  return [...new Set(bad)];
+  const expected = window.PS_EXPECTED_VERSIONS;
+  if(!page || !expected){
+    // index.html predates per-file versions (or is missing its stamp): it is the out-of-date file
+    return ["index.html", ...PS_EXPECTED_FILES.filter(f => !have[f])];
+  }
+  return Object.keys(expected).filter(f => have[f] !== expected[f]).sort();
 }
 
 function versionBar(){
