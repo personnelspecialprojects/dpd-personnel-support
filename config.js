@@ -1,4 +1,4 @@
-(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["config.js"] = "2026.10.07-1";
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["config.js"] = "2026.10.08-1";
 /* ============================================================
    config.js — every environment value and SharePoint column name
    lives here. If a live field check shows a different internal
@@ -91,6 +91,7 @@ const REQ_FIELDS = {
   source: "Source",
   requesterName: "RequesterName",
   phoneNumber: "PhoneNumber",
+  serviceNow: "ServiceNowNumber",         // Single line of text — ServiceNow case number (Source = ServiceNow)
   queue: "Queue"                          // Single line of text — blank = Dashboard inquiries; SPECIAL_QUEUE = Special Projects Inquiries tab
 };
 
