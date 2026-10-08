@@ -1,4 +1,4 @@
-(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["reports.js"] = "2026.10.07-1";
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["reports.js"] = "2026.10.08-1";
 /* ============================================================
    reports.js — activity counts by person and task for any date
    range, plus inquiries resolved, exports, and a lookup that
@@ -246,7 +246,8 @@ const Reports = (() => {
       .sort((a, b) => new Date(a[F.loggedAt]) - new Date(b[F.loggedAt]))
       .forEach(e => rows.push([formatDate(e[F.loggedAt]), e[F.category], e[F.activityName], e[F.identifier], Activity.qty(e), e[F.staffName], e[F.staffEmail]]));
     resolvedInRange().forEach(t => rows.push([
-      formatDate(t[R.completedOn]), "Inquiries", `${Tickets.queueOf(t) === "special" ? SPECIAL_QUEUE.replace(/ies$/, "y") : "Inquiry"} resolved: ${t.Title || ""}`, t[R.email] || t[R.phoneNumber] || "", 1, t[R.completedBy], ""
+      formatDate(t[R.completedOn]), "Inquiries", `${Tickets.queueOf(t) === "special" ? SPECIAL_QUEUE.replace(/ies$/, "y") : "Inquiry"} resolved: ${t.Title || ""}`,
+      t[R.serviceNow] ? `ServiceNow ${t[R.serviceNow]}` : t[R.email] || t[R.phoneNumber] || "", 1, t[R.completedBy], ""
     ]));
     downloadCsv(`activity-entries_${rangeSlug()}.csv`, rows);
     audit(AUDIT_AREAS.data, `Exported all activity entries (${plural(rows.length - 1, "row")}), ${rangeSlug().replace("_to_", " to ")}`);
