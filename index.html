@@ -473,11 +473,13 @@
           <label class="check"><input type="radio" name="meMethod" id="meMethodPhone" value="Phone" checked> Phone</label>
           <label class="check"><input type="radio" name="meMethod" id="meMethodEmail" value="Email"> Email</label>
           <label class="check"><input type="radio" name="meMethod" id="meMethodWalkin" value="Walk-in"> Walk-in</label>
+          <label class="check"><input type="radio" name="meMethod" id="meMethodSn" value="ServiceNow"> ServiceNow</label>
         </div>
       </div>
       <div class="field-row"><label for="meRequesterName">Requestor</label><input type="text" id="meRequesterName" placeholder="First Last"></div>
       <div class="field-row" id="mePhoneRow"><label for="mePhoneNumber">Phone</label><input type="text" id="mePhoneNumber" placeholder="214-555-0100"></div>
       <div class="field-row" id="meEmailRow" hidden><label for="meEmail">Email</label><input type="email" id="meEmail" placeholder="name@dallaspolice.gov"></div>
+      <div class="field-row" id="meSnRow" hidden><label for="meSnNumber">ServiceNow case #</label><input type="text" id="meSnNumber" placeholder="e.g. CS0012345" autocomplete="off" spellcheck="false"></div>
       <div class="field-row"><label for="meTitle">Problem title</label><input type="text" id="meTitle" placeholder="Short summary"></div>
       <div class="field-row"><label for="meDescription">Description</label><textarea id="meDescription" placeholder="What happened, what was discussed"></textarea></div>
       <div class="field-row">
@@ -618,20 +620,35 @@
 <div id="toastHost" aria-live="polite"></div>
 
 <script>
-  /* Release stamp. Every .js file carries the same stamp; core.js warns if any differ
-     (an old cached or un-uploaded file). Bump it in ALL files for each release. */
-  window.PS_PAGE_VERSION = "2026.10.07-1";
+  /* Release 2026.10.08-1. Each file's expected version is listed below; files that didn't
+     change in a release keep their old version, so only changed files need uploading.
+     core.js warns (and turns off saving) if any file doesn't match. */
+  window.PS_PAGE_VERSION = "2026.10.08-1";
+  window.PS_EXPECTED_VERSIONS = {
+    "activity.js": "2026.10.07-1",
+    "admin.js": "2026.10.07-1",
+    "audit.js": "2026.10.07-1",
+    "cases.js": "2026.10.07-1",
+    "config.js": "2026.10.08-1",
+    "core.js": "2026.10.08-1",
+    "legacy.js": "2026.10.07-1",
+    "reports.js": "2026.10.08-1",
+    "roster.js": "2026.10.07-1",
+    "setup-check.js": "2026.10.08-1",
+    "tickets.js": "2026.10.08-1",
+    "work.js": "2026.10.07-1"
+  };
   window.PS_FILE_VERSIONS = {};
 </script>
-<script src="config.js?v=2026.10.07-1"></script>
-<script src="core.js?v=2026.10.07-1"></script>
+<script src="config.js?v=2026.10.08-1"></script>
+<script src="core.js?v=2026.10.08-1"></script>
 <script src="activity.js?v=2026.10.07-1"></script>
 <script src="work.js?v=2026.10.07-1"></script>
-<script src="tickets.js?v=2026.10.07-1"></script>
-<script src="reports.js?v=2026.10.07-1"></script>
+<script src="tickets.js?v=2026.10.08-1"></script>
+<script src="reports.js?v=2026.10.08-1"></script>
 <script src="admin.js?v=2026.10.07-1"></script>
 <script src="audit.js?v=2026.10.07-1"></script>
-<script src="setup-check.js?v=2026.10.07-1"></script>
+<script src="setup-check.js?v=2026.10.08-1"></script>
 <script src="roster.js?v=2026.10.07-1"></script>
 <script src="cases.js?v=2026.10.07-1"></script>
 <script src="legacy.js?v=2026.10.07-1"></script>
