@@ -113,6 +113,7 @@
         <button type="button" class="btn btn-ghost btn-sm" id="spOpenManualEntryBtn">New manual inquiry</button>
       </div>
       <p class="muted small sp-intro">Inquiries set aside from the Dashboard for a special project. Work them the same way: open one to update its status and notes. <strong>Move back</strong> returns an inquiry to the Dashboard.</p>
+      <p class="small" id="spOffNote" hidden style="background:#FFF6D6;border:1px solid #E8C94A;border-radius:6px;padding:8px 12px;">Special Projects Inquiries is <strong>turned off</strong>. Nothing new can be moved here. Finish the open inquiries below or <strong>Move back</strong> them to the Dashboard; this tab disappears once none are open.</p>
       <div class="dash-tools">
         <select id="spFilterStatus" aria-label="Filter by status"></select>
         <input type="text" id="spSearchBox" placeholder="Search name, email, title, #" aria-label="Search special project inquiries">
@@ -353,6 +354,17 @@
       </div>
       <label class="check small"><input type="checkbox" id="showInactiveTypes"> Show activities that are turned off</label>
       <div id="typesTable"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h3>Special Projects Inquiries</h3>
+          <p class="muted small">Turn this off when there's no special project running. While it's off, the Special Projects buttons are hidden for everyone and nothing new can be moved to that tab. Inquiries already there stay put and can still be worked or moved back. Turning it on again restores everything.</p>
+        </div>
+        <button type="button" class="btn btn-navy" id="specialSwitchBtn" hidden>Turn off</button>
+      </div>
+      <p class="small" id="specialSwitchStatus"></p>
     </section>
 
     <section class="panel">
@@ -620,35 +632,35 @@
 <div id="toastHost" aria-live="polite"></div>
 
 <script>
-  /* Release 2026.10.08-1. Each file's expected version is listed below; files that didn't
+  /* Release 2026.10.23-1. Each file's expected version is listed below; files that didn't
      change in a release keep their old version, so only changed files need uploading.
      core.js warns (and turns off saving) if any file doesn't match. */
-  window.PS_PAGE_VERSION = "2026.10.08-1";
+  window.PS_PAGE_VERSION = "2026.10.23-1";
   window.PS_EXPECTED_VERSIONS = {
     "activity.js": "2026.10.07-1",
     "admin.js": "2026.10.07-1",
     "audit.js": "2026.10.07-1",
     "cases.js": "2026.10.07-1",
-    "config.js": "2026.10.08-1",
+    "config.js": "2026.10.23-1",
     "core.js": "2026.10.08-1",
     "legacy.js": "2026.10.07-1",
     "reports.js": "2026.10.08-1",
     "roster.js": "2026.10.07-1",
-    "setup-check.js": "2026.10.08-1",
-    "tickets.js": "2026.10.08-1",
+    "setup-check.js": "2026.10.23-1",
+    "tickets.js": "2026.10.23-1",
     "work.js": "2026.10.07-1"
   };
   window.PS_FILE_VERSIONS = {};
 </script>
-<script src="config.js?v=2026.10.08-1"></script>
+<script src="config.js?v=2026.10.23-1"></script>
 <script src="core.js?v=2026.10.08-1"></script>
 <script src="activity.js?v=2026.10.07-1"></script>
 <script src="work.js?v=2026.10.07-1"></script>
-<script src="tickets.js?v=2026.10.08-1"></script>
+<script src="tickets.js?v=2026.10.23-1"></script>
 <script src="reports.js?v=2026.10.08-1"></script>
 <script src="admin.js?v=2026.10.07-1"></script>
 <script src="audit.js?v=2026.10.07-1"></script>
-<script src="setup-check.js?v=2026.10.08-1"></script>
+<script src="setup-check.js?v=2026.10.23-1"></script>
 <script src="roster.js?v=2026.10.07-1"></script>
 <script src="cases.js?v=2026.10.07-1"></script>
 <script src="legacy.js?v=2026.10.07-1"></script>
