@@ -1,4 +1,4 @@
-(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["setup-check.js"] = "2026.10.08-1";
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["setup-check.js"] = "2026.10.23-1";
 /* ============================================================
    setup-check.js — Admin → "Check SharePoint setup".
    Read-only. Compares every list and column the app expects
@@ -83,6 +83,9 @@ const SetupCheck = (() => {
       { list: CONFIG.lists.workItemLog, purpose: "tracked work history and notes", fields: [
         [WL.workItemId, "Number", { index: true }], [WL.action, "Note", { plain: true }],
         [WL.staffName, "Text"], [WL.staffEmail, "Text"], [WL.loggedAt, "DateTime", { time: true }]
+      ]},
+      { list: CONFIG.lists.appSettings, purpose: "shared switches set in Admin (Special Projects on/off)", fields: [
+        [SETTINGS_FIELDS.value, "Text"]
       ]}
     ];
   }
@@ -315,7 +318,8 @@ const AuditCoverage = (() => {
         bulk: true, select: [], what: i => `Employee record: ${i.Title || ""}` },
       { list: CONFIG.lists.activityTypes, label: "Activities (setup)", areas: [AUDIT_AREAS.admin], select: [], what: i => `Activity: ${i.Title || ""}` },
       { list: CONFIG.lists.team, label: "Team access", areas: [AUDIT_AREAS.admin], select: [], what: i => `Roster entry: ${i.Title || ""}` },
-      { list: CONFIG.lists.alertRules, label: "Aging alerts", areas: [AUDIT_AREAS.admin], select: [], what: i => `Alert rule #${i.Id}` }
+      { list: CONFIG.lists.alertRules, label: "Aging alerts", areas: [AUDIT_AREAS.admin], select: [], what: i => `Alert rule #${i.Id}` },
+      { list: CONFIG.lists.appSettings, label: "App settings", areas: [AUDIT_AREAS.admin], select: [], what: i => `Setting: ${i.Title || ""}` }
     ];
   }
 
