@@ -1,4 +1,4 @@
-(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["tickets.js"] = "2026.10.23-1";
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["tickets.js"] = "2026.10.23-2";
 /* ============================================================
    tickets.js — the Inquiries tab, Audit Log tab, and aging alert
    rules. Ported from the Secondary Employment Support Portal,
@@ -66,16 +66,15 @@ const Tickets = (() => {
     return tickets.filter(t => queueOf(t) === "special" && isOpenStatus(statusOf(t))).length;
   }
 
-  /* When Special Projects is off: no Special Projects buttons, no manual entry into it.
-     The tab stays while it still holds open inquiries (they can be worked or moved back). */
+  /* When Special Projects is off: the tab, the Special Projects buttons and manual entry into it
+     are removed. Admins can still open the page from the link in the Admin tab, to work or move
+     back anything left there. Staff who are on the page when it's turned off go to the Dashboard. */
   function applySpecialSwitch(){
     const on = specialEnabled();
-    const showTab = on || openSpecialCount() > 0;
     const tab = document.querySelector('.tab[data-view="specialView"]');
-    if(tab){
-      tab.hidden = !showTab;
-      if(!showTab && tab.classList.contains("active")) switchTab("dashView");
-    }
+    if(tab) tab.hidden = !on;
+    const view = document.getElementById("specialView");
+    if(!on && !App.isAdmin && view && view.classList.contains("active")) switchTab("dashView");
     const note = document.getElementById("spOffNote");
     if(note) note.hidden = on;
     const meBtn = document.getElementById("spOpenManualEntryBtn");
@@ -87,6 +86,8 @@ const Tickets = (() => {
     const status = document.getElementById("specialSwitchStatus");
     const btn = document.getElementById("specialSwitchBtn");
     if(!status || !btn) return;
+    const count = document.getElementById("specialOpenCount");
+    if(count){ const n = openSpecialCount(); count.textContent = `(${n} open)`; }
     if(settingsStatus === "missing"){
       status.innerHTML = `${escapeHtml(SPECIAL_QUEUE)} is <strong>on</strong>. To be able to turn it off, create a list named <strong>${escapeHtml(CONFIG.lists.appSettings)}</strong> with a <strong>Value</strong> column (Single line of text), then run Check SharePoint setup.`;
       btn.hidden = true;
@@ -101,9 +102,9 @@ const Tickets = (() => {
     const open = openSpecialCount();
     status.innerHTML = on
       ? `${escapeHtml(SPECIAL_QUEUE)} is <strong>on</strong>. Staff can move inquiries there with the Special Projects button.`
-      : `${escapeHtml(SPECIAL_QUEUE)} is <strong>off</strong>. ` + (open
-          ? `${open} open inquir${open === 1 ? "y is" : "ies are"} still in it; staff can finish ${open === 1 ? "it or move it" : "them or move them"} back. The tab hides once none are open.`
-          : "The tab and the Special Projects buttons are hidden.");
+      : `${escapeHtml(SPECIAL_QUEUE)} is <strong>off</strong>. The tab and the Special Projects buttons are removed for everyone.` + (open
+          ? ` ${open} open inquir${open === 1 ? "y is" : "ies are"} still on the page; use the link below to work ${open === 1 ? "it or move it" : "them or move them"} back.`
+          : "");
     btn.hidden = false;
     btn.textContent = on ? "Turn off" : "Turn on";
   }
@@ -202,6 +203,8 @@ const Tickets = (() => {
     on("createRuleBtn", "click", createRule);
     renderPalette();
     on("specialSwitchBtn", "click", () => setSpecialEnabled(!specialEnabled()));
+    on("specialOpenLink", "click", () => switchTab("specialView"));
+    on("spBackToAdmin", "click", () => switchTab("adminView"));
 
     onView("dashView", renderTickets);
     onView("specialView", renderTickets);
