@@ -1,4 +1,4 @@
-(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["setup-check.js"] = "2026.10.23-1";
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["setup-check.js"] = "2026.10.23-3";
 /* ============================================================
    setup-check.js — Admin → "Check SharePoint setup".
    Read-only. Compares every list and column the app expects
@@ -20,7 +20,8 @@ const SetupCheck = (() => {
      Each field: [internalName, type, options]
        options.choices  — values the app writes or filters on
        options.json     — holds JSON: must be plain text and not append-only
-       options.index    — should be indexed (needed once the list passes 5,000 items) */
+       options.index    — should be indexed (needed once the list passes 5,000 items)
+       options.default  — the column's default value (emailed inquiries rely on these) */
   function schema(){
     const T = TYPE_FIELDS, F = LOG_FIELDS, R = REQ_FIELDS, A = AUDIT_FIELDS,
           AL = ALERT_FIELDS, M = TEAM_FIELDS, W = WORK_FIELDS, WL = WORKLOG_FIELDS, E = EMP_FIELDS;
@@ -45,10 +46,10 @@ const SetupCheck = (() => {
         [R.email, "Text"], [R.problem, "Note", { plain: true }],
         [R.internalNotes, "Note", { plain: true }], [R.completed, "Boolean"],
         [R.completedOn, "DateTime", { index: true, time: true }], [R.completedBy, "Text"],
-        [R.status, "Choice", { index: true, choices: ["New", "In Progress", "Completed", "Merged", NO_ACTION_STATUS] }],
+        [R.status, "Choice", { index: true, default: "New", choices: ["New", "In Progress", "Completed", "Merged", NO_ACTION_STATUS] }],
         [R.receivedOn, "DateTime", { index: true, time: true }],
-        [R.entryType, "Choice", { choices: ["Automated", "Manual"] }],
-        [R.source, "Choice", { choices: ["Email", "Phone", "Walk-in", "ServiceNow"] }], [R.serviceNow, "Text"],
+        [R.entryType, "Choice", { default: "Automated", choices: ["Automated", "Manual"] }],
+        [R.source, "Choice", { default: "Email", choices: ["Email", "Phone", "Walk-in", "ServiceNow"] }], [R.serviceNow, "Text"],
         [R.requesterName, "Text"], [R.phoneNumber, "Text"], [R.queue, "Text"]
       ]},
       { list: CONFIG.lists.audit, purpose: "the audit log", renamedFrom: "Request Audit Log", fields: [
@@ -164,6 +165,12 @@ const SetupCheck = (() => {
         }
       }
 
+      if(opt.default !== undefined && f.TypeAsString === type && String(f.DefaultValue || "") !== opt.default){
+        fieldOk = false;
+        out.warnings.push(`"${name}" has ${f.DefaultValue ? `the default value "${f.DefaultValue}"` : "no default value"}; it should be "${opt.default}". ` +
+          `Edit the column → Default value → ${opt.default}. Emailed inquiries are labeled correctly only if this is right.`);
+      }
+
       if(type === "Note" && f.TypeAsString === "Note"){
         if(f.RichText === true){
           fieldOk = false;
@@ -194,6 +201,50 @@ const SetupCheck = (() => {
     return out;
   }
 
+  /* Dates and times. Two checks for inquiry times that are off by a few hours:
+     1. The site's time zone. A date the intake flow saves without a time zone is read in the
+        site's time zone, so a site left on Pacific time shifts every email by 2 hours.
+     2. The intake times themselves. SharePoint stamps Created when the flow adds an inquiry, a
+        minute or two after the email arrives. If ReceivedOn is consistently hours away from
+        Created, the flow is saving the time wrong. */
+  async function checkTimes(){
+    const out = { list: "Dates and times", purpose: "site time zone and email arrival times", errors: [], warnings: [], ok: 0, noCount: true };
+    try{
+      const res = await spRequest(`${CONFIG.siteUrl}/_api/web/RegionalSettings/TimeZone`);
+      const tz = await res.json();
+      const desc = String(tz.Description || "");
+      if(!/central time/i.test(desc)){
+        out.warnings.push(`The SharePoint site's time zone is "${desc || "unknown"}". Set it to (UTC-06:00) Central Time (US and Canada): ` +
+          `Site settings → Regional settings → Time zone. Otherwise times saved by Power Automate can be off by hours.`);
+      }
+    }catch(err){
+      out.warnings.push(`The site's time zone couldn't be read: ${err.message}`);
+    }
+
+    const R = REQ_FIELDS;
+    const emailed = (typeof Tickets !== "undefined" ? Tickets.all : [])
+      .filter(t => t[R.entryType] !== "Manual" && t[R.receivedOn] && t.Created)
+      .sort((a, b) => b.Id - a.Id).slice(0, 30)
+      .map(t => (new Date(t.Created) - new Date(t[R.receivedOn])) / 60000)
+      .filter(Number.isFinite).sort((a, b) => a - b);
+    if(emailed.length >= 3){
+      const median = emailed[Math.floor(emailed.length / 2)];
+      if(median < -30 || median > 90){
+        const hours = Math.round(Math.abs(median) / 60 * 2) / 2;
+        const label = hours >= 1 ? `about ${hours} hour${hours === 1 ? "" : "s"}` : `about ${Math.round(Math.abs(median))} minutes`;
+        out.warnings.push(median < 0
+          ? `Emailed inquiries show a received time ${label} LATER than SharePoint actually got them (checked the last ${emailed.length}). ` +
+            `The intake flow is most likely saving the time without its time zone. In the flow's Create item step, set ReceivedOn to the trigger's ` +
+            `Received Time exactly as it comes (no Convert time zone or formatDateTime), and check the site time zone above.`
+          : `Emailed inquiries were added to SharePoint ${label} after the received time shown (checked the last ${emailed.length}). ` +
+            `If the flow wasn't delayed, it's saving the time in the wrong time zone. In the flow's Create item step, set ReceivedOn to the trigger's ` +
+            `Received Time exactly as it comes, and check the site time zone above.`);
+      }
+    }
+    if(!out.warnings.length) out.ok = 1;
+    return out;
+  }
+
   let lastText = "";
 
   async function run(){
@@ -203,7 +254,7 @@ const SetupCheck = (() => {
     btn.textContent = "Checking...";
     wrap.innerHTML = `<p class="muted">Reading ${schema().length} lists from SharePoint...</p>`;
     try{
-      const results = await Promise.all(schema().map(checkList));
+      const results = await Promise.all([...schema().map(checkList), checkTimes()]);
       const errors = results.reduce((n, r) => n + r.errors.length, 0);
       const warnings = results.reduce((n, r) => n + r.warnings.length, 0);
       render(results, errors, warnings);
@@ -240,7 +291,7 @@ const SetupCheck = (() => {
         return `<div class="check-list ${state}">
           <div class="check-head"><span class="check-icon" aria-hidden="true">${icon}</span>
             <strong>${escapeHtml(r.list)}</strong> <span class="muted small">${escapeHtml(r.purpose)}</span>
-            ${!r.missingList ? `<span class="muted small check-count">${r.ok} column${r.ok === 1 ? "" : "s"} OK</span>` : ""}
+            ${!r.missingList && !r.noCount ? `<span class="muted small check-count">${r.ok} column${r.ok === 1 ? "" : "s"} OK</span>` : ""}
           </div>
           ${lines ? `<ul>${lines}</ul>` : ""}
         </div>`;
