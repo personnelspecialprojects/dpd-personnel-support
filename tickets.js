@@ -1,4 +1,4 @@
-(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["tickets.js"] = "2026.10.08-1";
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["tickets.js"] = "2026.10.23-1";
 /* ============================================================
    tickets.js — the Inquiries tab, Audit Log tab, and aging alert
    rules. Ported from the Secondary Employment Support Portal,
@@ -18,12 +18,14 @@ const Tickets = (() => {
   let sortField = "Id", sortDir = -1;
   let selectedColor = PRESET_COLORS[0].hex;
   let wired = false;
+  let settings = [];
+  let settingsStatus = "unknown";   // ok | missing (no App Settings list) | error
 
   /* ---------- loading ---------- */
 
   async function init(){
     if(!wired) wire();
-    const results = await Promise.allSettled([loadTickets(), loadRules()]);
+    const results = await Promise.allSettled([loadTickets(), loadRules(), loadSettings()]);
     results.forEach(r => { if(r.status === "rejected") console.error(r.reason); });
     if(results[0].status === "rejected"){
       toast(`Inquiries couldn't load: ${results[0].reason.message}`, { type: "error", duration: 0 });
@@ -32,8 +34,109 @@ const Tickets = (() => {
   }
 
   async function refresh(){
-    await Promise.all([loadTickets(), loadRules()]);
+    await Promise.all([loadTickets(), loadRules(), loadSettings()]);
     renderTickets();
+  }
+
+  /* ---------- shared settings (App Settings list) ----------
+     Read with every refresh, so a change made in Admin reaches everyone within a minute.
+     If the list doesn't exist yet, everything stays at its default (Special Projects on).
+     If a read fails, the last values read stay in effect. */
+
+  async function loadSettings(){
+    try{
+      settings = await spGetAll(CONFIG.lists.appSettings, "$top=200");
+      settingsStatus = "ok";
+    }catch(err){
+      if(err.status === 404){ settings = []; settingsStatus = "missing"; }
+      else{ settingsStatus = "error"; console.error("App settings didn't load:", err); }
+    }
+  }
+
+  function settingRow(name){
+    return settings.find(s => String(s.Title || "").trim().toLowerCase() === name.toLowerCase());
+  }
+
+  function specialEnabled(){
+    const row = settingRow(SETTING_SPECIAL);
+    return !row || String(row[SETTINGS_FIELDS.value] || "").trim().toLowerCase() !== "off";
+  }
+
+  function openSpecialCount(){
+    return tickets.filter(t => queueOf(t) === "special" && isOpenStatus(statusOf(t))).length;
+  }
+
+  /* When Special Projects is off: no Special Projects buttons, no manual entry into it.
+     The tab stays while it still holds open inquiries (they can be worked or moved back). */
+  function applySpecialSwitch(){
+    const on = specialEnabled();
+    const showTab = on || openSpecialCount() > 0;
+    const tab = document.querySelector('.tab[data-view="specialView"]');
+    if(tab){
+      tab.hidden = !showTab;
+      if(!showTab && tab.classList.contains("active")) switchTab("dashView");
+    }
+    const note = document.getElementById("spOffNote");
+    if(note) note.hidden = on;
+    const meBtn = document.getElementById("spOpenManualEntryBtn");
+    if(meBtn) meBtn.hidden = !on;
+    renderSpecialAdmin();
+  }
+
+  function renderSpecialAdmin(){
+    const status = document.getElementById("specialSwitchStatus");
+    const btn = document.getElementById("specialSwitchBtn");
+    if(!status || !btn) return;
+    if(settingsStatus === "missing"){
+      status.innerHTML = `${escapeHtml(SPECIAL_QUEUE)} is <strong>on</strong>. To be able to turn it off, create a list named <strong>${escapeHtml(CONFIG.lists.appSettings)}</strong> with a <strong>Value</strong> column (Single line of text), then run Check SharePoint setup.`;
+      btn.hidden = true;
+      return;
+    }
+    if(settingsStatus === "error" && !settings.length){
+      status.textContent = `The ${CONFIG.lists.appSettings} list couldn't be read, so this switch can't be changed right now. Try again in a minute.`;
+      btn.hidden = true;
+      return;
+    }
+    const on = specialEnabled();
+    const open = openSpecialCount();
+    status.innerHTML = on
+      ? `${escapeHtml(SPECIAL_QUEUE)} is <strong>on</strong>. Staff can move inquiries there with the Special Projects button.`
+      : `${escapeHtml(SPECIAL_QUEUE)} is <strong>off</strong>. ` + (open
+          ? `${open} open inquir${open === 1 ? "y is" : "ies are"} still in it; staff can finish ${open === 1 ? "it or move it" : "them or move them"} back. The tab hides once none are open.`
+          : "The tab and the Special Projects buttons are hidden.");
+    btn.hidden = false;
+    btn.textContent = on ? "Turn off" : "Turn on";
+  }
+
+  async function setSpecialEnabled(on){
+    if(!on && !confirm(`Turn off ${SPECIAL_QUEUE}?\n\nNo one will be able to move inquiries there until it's turned back on. Inquiries already there stay where they are.`)) return;
+    const btn = document.getElementById("specialSwitchBtn");
+    btn.disabled = true;
+    try{
+      await loadSettings();   // latest copy, so two admins don't create duplicate rows
+      if(settingsStatus === "missing") throw new Error(`there's no "${CONFIG.lists.appSettings}" list on the SharePoint site yet`);
+      if(settingsStatus !== "ok") throw new Error(`the ${CONFIG.lists.appSettings} list couldn't be read`);
+      const value = on ? "On" : "Off";
+      const row = settingRow(SETTING_SPECIAL);
+      let id;
+      if(row){
+        await spUpdate(CONFIG.lists.appSettings, row.Id, { [SETTINGS_FIELDS.value]: value });
+        id = row.Id;
+      }else{
+        const created = await spCreate(CONFIG.lists.appSettings, { Title: SETTING_SPECIAL, [SETTINGS_FIELDS.value]: value });
+        id = created && created.Id;
+      }
+      await loadSettings();
+      renderTickets();
+      audit(AUDIT_AREAS.admin, `Turned ${on ? "on" : "off"} ${SPECIAL_QUEUE}`, { recordId: id, title: `Setting: ${SETTING_SPECIAL}` });
+      toast(`${SPECIAL_QUEUE} is ${on ? "on" : "off"} for everyone. Other open screens update within a minute.`, { type: "success" });
+    }catch(err){
+      console.error(err);
+      toast(`The setting wasn't changed: ${err.message}.`, { type: "error", duration: 0 });
+    }finally{
+      btn.disabled = false;
+      renderSpecialAdmin();
+    }
   }
 
   async function loadTickets(){
@@ -98,6 +201,7 @@ const Tickets = (() => {
     });
     on("createRuleBtn", "click", createRule);
     renderPalette();
+    on("specialSwitchBtn", "click", () => setSpecialEnabled(!specialEnabled()));
 
     onView("dashView", renderTickets);
     onView("specialView", renderTickets);
@@ -319,6 +423,7 @@ const Tickets = (() => {
   }
 
   function renderTickets(){
+    applySpecialSwitch();
     renderList("main");
     renderList("special");
   }
@@ -343,10 +448,13 @@ const Tickets = (() => {
     empty.innerHTML = document.getElementById(ui.openOnly).checked && !document.getElementById(ui.filter).value
       && !document.getElementById(ui.search).value
       ? (key === "special"
-          ? `<p><strong>No open ${escapeHtml(SPECIAL_QUEUE)}.</strong></p><p class="small">Use the <strong>Special Projects</strong> button on a Dashboard inquiry to move it here.</p>`
+          ? `<p><strong>No open ${escapeHtml(SPECIAL_QUEUE)}.</strong></p>` + (specialEnabled()
+              ? `<p class="small">Use the <strong>Special Projects</strong> button on a Dashboard inquiry to move it here.</p>`
+              : `<p class="small">${escapeHtml(SPECIAL_QUEUE)} is turned off, so nothing new can be moved here.</p>`)
           : "<p><strong>All caught up.</strong> No open inquiries.</p>")
       : "<p>No inquiries match these filters.</p>";
 
+    const specialOn = specialEnabled();
     body.innerHTML = list.map(t => {
       const s = statusOf(t);
       const color = alertColor(t);
@@ -354,7 +462,9 @@ const Tickets = (() => {
         t[R.serviceNow] ? `ServiceNow ${t[R.serviceNow]}` : ""].filter(Boolean).join(" · ");
       const moveBtn = key === "special"
         ? `<button type="button" class="btn-noaction" data-move="${t.Id}" data-to="main" title="Move back to the Dashboard inquiries">Move back</button>`
-        : `<button type="button" class="btn-noaction btn-special" data-move="${t.Id}" data-to="special" title="Move to the ${escapeHtml(SPECIAL_QUEUE)} tab">Special Projects</button>`;
+        : specialOn
+          ? `<button type="button" class="btn-noaction btn-special" data-move="${t.Id}" data-to="special" title="Move to the ${escapeHtml(SPECIAL_QUEUE)} tab">Special Projects</button>`
+          : "";
       return `<tr data-ticket-id="${t.Id}" class="${color ? "alert-row" : ""}" ${color ? `style="--alert-color:${escapeHtml(color)}"` : ""} tabindex="0">
         <td class="nowrap muted">${formatTicketId(t.Id)}</td>
         <td>
@@ -401,6 +511,14 @@ const Tickets = (() => {
     if(!t) return;
     const fromKey = queueOf(t);
     if(fromKey === toKey){ renderTickets(); return; }
+    if(toKey === "special"){
+      await loadSettings();   // an admin may have turned it off since this screen last refreshed
+      if(!specialEnabled()){
+        toast(`${SPECIAL_QUEUE} is turned off, so #${formatTicketId(id)} wasn't moved. An admin can turn it back on in the Admin tab.`, { type: "error" });
+        renderTickets();
+        return;
+      }
+    }
     const value = toKey === "special" ? SPECIAL_QUEUE : "";
     try{
       await spUpdate(CONFIG.lists.requests, id, { [R.queue]: value });
@@ -453,6 +571,7 @@ const Tickets = (() => {
     const inSpecial = queueOf(t) === "special";
     $("modalTitle").textContent = `Inquiry #${formatTicketId(id)}${inSpecial ? ` · ${SPECIAL_QUEUE}` : ""}`;
     $("mQueueBtn").textContent = inSpecial ? "Move back to Inquiries" : `Move to ${SPECIAL_QUEUE}`;
+    $("mQueueBtn").hidden = !inSpecial && !specialEnabled();
     $("mReq").textContent = t.Title || "";
     $("mEmail").textContent = t[R.serviceNow] ? `ServiceNow case ${t[R.serviceNow]}`
       : t[R.email] || (t[R.phoneNumber] ? `Phone: ${t[R.phoneNumber]}` : "");
@@ -714,6 +833,10 @@ const Tickets = (() => {
   let manualQueue = "main";
 
   function openManualEntry(queueKey){
+    if(queueKey === "special" && !specialEnabled()){
+      toast(`${SPECIAL_QUEUE} is turned off. Add the inquiry from the Dashboard instead.`, { type: "error" });
+      return;
+    }
     manualQueue = queueKey === "special" ? "special" : "main";
     const $ = id => document.getElementById(id);
     $("meTitleHeading").textContent = manualQueue === "special" ? `New manual inquiry (${SPECIAL_QUEUE})` : "New manual inquiry";
