@@ -1,4 +1,4 @@
-(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["config.js"] = "2026.10.08-1";
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["config.js"] = "2026.10.23-1";
 /* ============================================================
    config.js — every environment value and SharePoint column name
    lives here. If a live field check shows a different internal
@@ -21,7 +21,8 @@ const CONFIG = {
     team: "Team Members",
     workItems: "Work Items",
     workItemLog: "Work Item Log",
-    employees: "Employees"            // 2.0 — roster, refreshed from the monthly SQL report
+    employees: "Employees",           // 2.0 — roster, refreshed from the monthly SQL report
+    appSettings: "App Settings"       // shared on/off switches set in the Admin tab
   },
 
   adminContact: "Jared Nielsen",
@@ -214,6 +215,13 @@ const NO_ACTION_STATUS = "No Action Required";
    their own tab so they don't crowd the Dashboard. Stored in the Requests list's
    Queue column. */
 const SPECIAL_QUEUE = "Special Projects Inquiries";
+
+/* App Settings list — one row per shared setting, changed from the Admin tab.
+   Title = the setting's name, Value = its value. A missing row means the default. */
+const SETTINGS_FIELDS = {
+  value: "Value"                // Single line of text
+};
+const SETTING_SPECIAL = "SpecialProjectsInquiries";   // "On" (default) or "Off"
 
 const AUDIT_AREAS = {
   inquiry: "Inquiry",
