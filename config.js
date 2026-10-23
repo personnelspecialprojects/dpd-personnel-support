@@ -195,6 +195,9 @@ const CASE_FIELD_TYPES = {
 
 /* SheetJS (reads and writes Excel in the browser; files never leave the computer) */
 const SHEETJS_URL = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+/* Integrity hash of exactly that file: the browser refuses any other copy. Matches the
+   xlsx 0.18.5 npm package. Change it only together with SHEETJS_URL. */
+const SHEETJS_SRI = "sha512-r22gChDnGvBylk90+2e/ycr3RVrDi8DIOkIGNhJlKfuyQM4tIRAI062MaV8sfjQKYVGjOBaZBOA87z+IhZE9DA==";
 
 /* Work Item Log list — history and notes for each work item */
 const WORKLOG_FIELDS = {

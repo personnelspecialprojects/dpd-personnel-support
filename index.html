@@ -5,8 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Personnel Support</title>
 <link rel="stylesheet" href="styles.css?v=2026.10.07-1">
+<!-- Microsoft sign-in library 2.35.0. The integrity hash makes the browser refuse any copy that isn't
+     exactly Microsoft's published file (hash from Microsoft's MSAL CDN documentation). Both CDN addresses
+     serve the same file; the second is a fallback if the first is blocked. -->
 <script src="https://alcdn.msauth.net/browser/2.35.0/js/msal-browser.min.js"
-  onerror="this.onerror=null;var s=document.createElement('script');s.src='https://alcdn.msftauth.net/browser/2.35.0/js/msal-browser.min.js';document.head.appendChild(s);"></script>
+  integrity="sha384-PARf28kmic36Ve+O3DnUerRXFtOQ7ZDqRDGpLcbljly5/N39T2OV3kt3QsWOKeAX" crossorigin="anonymous"
+  onerror="this.onerror=null;var s=document.createElement('script');s.src='https://alcdn.msftauth.net/browser/2.35.0/js/msal-browser.min.js';s.integrity=this.integrity;s.crossOrigin='anonymous';document.head.appendChild(s);"></script>
 </head>
 <body>
 

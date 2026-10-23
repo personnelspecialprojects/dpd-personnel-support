@@ -478,8 +478,10 @@ function loadSheetJS(){
   sheetJsPromise = new Promise((resolve, reject) => {
     const s = document.createElement("script");
     s.src = SHEETJS_URL;
+    s.integrity = SHEETJS_SRI;          // the browser refuses a copy that isn't exactly the expected file
+    s.crossOrigin = "anonymous";
     s.onload = () => (typeof XLSX !== "undefined" ? resolve(XLSX) : reject(new Error("Excel library loaded but isn't available")));
-    s.onerror = () => { sheetJsPromise = null; reject(new Error("The Excel library couldn't load (cdnjs.cloudflare.com may be blocked on this network)")); };
+    s.onerror = () => { sheetJsPromise = null; reject(new Error("The Excel library couldn't load. cdnjs.cloudflare.com may be blocked on this network, or the file it sent didn't match the expected copy")); };
     document.head.appendChild(s);
   });
   return sheetJsPromise;

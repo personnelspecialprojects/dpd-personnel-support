@@ -235,10 +235,31 @@ const Tickets = (() => {
       .trim();
   }
 
+  /* Shows email text, turning [https://...] (common in signatures) into a link.
+     Email text comes from outside senders, so: the address may not contain spaces, quotes,
+     angle brackets or backticks; it must parse as an http/https address; and the text and the
+     address are escaped separately. Anything that fails stays plain text. */
   function formatProblemHtml(raw){
-    let escaped = escapeHtml(cleanEmailText(raw));
-    escaped = escaped.replace(/\[(https?:\/\/[^\]\s]+)\]/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
-    return escaped || '<em class="muted">No details provided.</em>';
+    const text = cleanEmailText(raw);
+    if(!text) return '<em class="muted">No details provided.</em>';
+    const re = /\[(https?:\/\/[^\]\s"'<>`]+)\]/g;
+    let html = "", last = 0, m;
+    while((m = re.exec(text))){
+      html += escapeHtml(text.slice(last, m.index));
+      const href = safeLink(m[1]);
+      html += href
+        ? `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(m[1])}</a>`
+        : escapeHtml(m[0]);
+      last = re.lastIndex;
+    }
+    return html + escapeHtml(text.slice(last));
+  }
+
+  function safeLink(s){
+    try{
+      const u = new URL(s);
+      return u.protocol === "https:" || u.protocol === "http:" ? u.href : null;
+    }catch(_){ return null; }
   }
 
   /* Inquiry audit entries keep their status and note snapshots, and now go to the
