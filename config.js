@@ -1,4 +1,4 @@
-(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["config.js"] = "2026.10.30-1";
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["config.js"] = "2026.10.30-2";
 /* ============================================================
    config.js — every environment value and SharePoint column name
    lives here. If a live field check shows a different internal
@@ -14,7 +14,7 @@ const CONFIG = {
      PatrolBidPortal → Authentication → Single-page application. */
   redirectUris: [
     "https://personnelspecialprojects.github.io/dpd-personnel-support/",   // GitHub Pages (blocked on city computers since Oct 2026)
-    "https://dpd-personnel-support.pages.dev/"                            // Cloudflare Pages
+    "https://dpd-personnel-support.dpd-apps.workers.dev/"                 // Cloudflare (Workers, connected to the GitHub repo)
   ],
   siteUrl: "https://dallastxgov.sharepoint.com/sites/dpdpersonnelsupport",
 
