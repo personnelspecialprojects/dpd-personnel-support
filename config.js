@@ -1,4 +1,4 @@
-(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["config.js"] = "2026.10.23-3";
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["config.js"] = "2026.10.30-1";
 /* ============================================================
    config.js — every environment value and SharePoint column name
    lives here. If a live field check shows a different internal
@@ -9,7 +9,13 @@ const CONFIG = {
   appName: "Personnel Support",
   clientId: "0d384d2a-9a9e-46f6-a195-ad63f9e94f06",          // PatrolBidPortal registration
   tenantId: "2935709e-c10c-4809-a302-852d369f8700",
-  redirectUri: "https://personnelspecialprojects.github.io/dpd-personnel-support/",
+  /* Every address the app is published at. Sign-in uses the one matching the page's address.
+     Each one must also be added, spelled exactly the same (trailing slash included), in Azure:
+     PatrolBidPortal → Authentication → Single-page application. */
+  redirectUris: [
+    "https://personnelspecialprojects.github.io/dpd-personnel-support/",   // GitHub Pages (blocked on city computers since Oct 2026)
+    "https://dpd-personnel-support.pages.dev/"                            // Cloudflare Pages
+  ],
   siteUrl: "https://dallastxgov.sharepoint.com/sites/dpdpersonnelsupport",
 
   lists: {
