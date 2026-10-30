@@ -1,4 +1,4 @@
-(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["core.js"] = "2026.10.23-3";
+(window.PS_FILE_VERSIONS = window.PS_FILE_VERSIONS || {})["core.js"] = "2026.10.30-1";
 /* ============================================================
    core.js — sign-in, SharePoint REST helpers, shared utilities,
    tab routing, polling, and boot. Loaded before the feature files.
@@ -21,14 +21,28 @@ function onView(viewId, fn){ (ViewHooks[viewId] = ViewHooks[viewId] || []).push(
 
 /* ---------------- Auth ---------------- */
 
+/* The app can be published at more than one address (GitHub Pages, Cloudflare Pages, later the
+   team's server). Sign-in must use the registered address that matches this page exactly, so pick
+   it from CONFIG.redirectUris by the page's folder address (ignores index.html and ?query). */
+function currentBase(){
+  return (location.origin + location.pathname.replace(/[^/]*$/, "")).toLowerCase();
+}
+
+function redirectUri(){
+  const list = CONFIG.redirectUris || (CONFIG.redirectUri ? [CONFIG.redirectUri] : []);
+  return list.find(u => String(u).toLowerCase() === currentBase()) || null;
+}
+
 function getMsal(){
   if(App.msal) return App.msal;
   if(typeof msal === "undefined") return null;   // CDN fallback may still be loading
+  if(!redirectUri()) return null;                // this address isn't set up for sign-in
   App.msal = new msal.PublicClientApplication({
     auth: {
       clientId: CONFIG.clientId,
       authority: `https://login.microsoftonline.com/${CONFIG.tenantId}`,
-      redirectUri: CONFIG.redirectUri
+      redirectUri: redirectUri(),
+      postLogoutRedirectUri: redirectUri()
     },
     cache: { cacheLocation: "sessionStorage" }
   });
@@ -52,6 +66,7 @@ async function acquireSpToken(account, allowPopup){
 }
 
 async function signIn(){
+  if(!redirectUri()){ showAddressProblem(); return; }
   const m = getMsal();
   if(!m){
     alert("The Microsoft sign-in library didn't load. Check your connection, or ask IT whether alcdn.msauth.net and alcdn.msftauth.net are blocked on this network, then reload the page.");
@@ -85,6 +100,16 @@ async function tryResumeSession(){
     console.warn("Silent sign-in didn't work; showing the sign-in button.", err);
     showGate("signInScreen");
   }
+}
+
+function showAddressProblem(){
+  const box = document.getElementById("signInAddrMsg");
+  if(!box) return;
+  box.innerHTML = `<strong>This address isn't set up for sign-in yet:</strong> <code>${escapeHtml(currentBase())}</code><br>` +
+    `${escapeHtml(CONFIG.adminContact)} needs to add it to <code>redirectUris</code> in config.js and to the PatrolBidPortal ` +
+    `app registration in Azure (Single-page application). Until then, use the app's usual address.`;
+  box.hidden = false;
+  document.getElementById("signInBtn").disabled = true;
 }
 
 function signOut(){
@@ -745,7 +770,8 @@ async function checkForNewRelease(force){
   if(since < (force ? 30 * 1000 : 3 * 60 * 1000)) return;
   lastReleaseCheck = Date.now();
   try{
-    const url = new URL("index.html", location.href);
+    // The folder address works on every host (Cloudflare Pages redirects /index.html to /).
+    const url = new URL("./", location.href);
     url.search = `check=${Date.now()}`;
     const res = await fetch(url.href, { cache: "no-store" });
     if(!res.ok) return;
@@ -785,5 +811,6 @@ function boot(){
     if(App.user) poll();
   });
   showGate("signInScreen");
+  if(!redirectUri()){ showAddressProblem(); return; }
   tryResumeSession();
 }
