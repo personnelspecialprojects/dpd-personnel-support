@@ -3,1149 +3,673 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>DPD Driving Safety</title>
-
-<!--
-  DPD Driving Safety Program — Foundation
-  ----------------------------------------
-  Single-file web app. HTML + CSS + vanilla JS. No build step.
-  Host on GitHub Pages; open from the hosted https:// URL (MSAL login
-  will not work from a local file:// path).
-
-  This file establishes:
-    1. Design system (DPD navy, status colors, type scale)
-    2. MSAL authentication (two-token pattern: Graph identity + SharePoint data)
-    3. SharePoint REST layer (get / create / update / delete + field inspector)
-    4. App shell (sidebar nav, top bar, hash router, screen registry)
-    5. Shared UI primitives (toast, loading, badges, DOM helper, date/email utils)
-
-  Screens are registered as render functions in the SCREENS object near the
-  bottom. Dashboard, Roster, Imports, Reports, Tickets, Admin, and Audit are
-  stubbed for now and get built out in later sessions.
--->
-
-<style>
-/* ============================================================
-   DESIGN SYSTEM
-   System font stack (Segoe UI on the city's Windows machines) —
-   no external font CDN, so nothing to be blocked on a locked-down
-   network. Navy + slate + status colors. A single brass hairline
-   is the identity accent.
-   ============================================================ */
-:root {
-  --navy-900: #0f1e38;
-  --navy-800: #16294a;
-  --navy-700: #1c3559;
-  --navy-500: #2f5488;
-  --navy-300: #6d88b3;
-  --navy-100: #e8eef6;
-
-  --brass:    #b08d57;
-  --brass-lt: #c9a86e;
-
-  --ink:    #1a1f2b;
-  --slate:  #5a6478;
-  --muted:  #8a92a3;
-  --line:   #dfe3ea;
-  --line-2: #eef1f5;
-  --paper:  #ffffff;
-  --canvas: #f4f6f9;
-
-  --clear:    #1f7a4d;
-  --clear-bg: #e7f3ec;
-  --due:      #9a6714;
-  --due-bg:   #fbf1dd;
-  --overdue:  #b32d2d;
-  --overdue-bg: #f9e7e7;
-
-  --danger:  #b32d2d;
-  --radius:  8px;
-  --radius-lg: 12px;
-
-  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-
-  --sidebar-w: 232px;
-  --shadow-card: 0 1px 2px rgba(15,30,56,0.06), 0 1px 3px rgba(15,30,56,0.04);
-}
-
-* { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; }
-body {
-  font-family: var(--font);
-  color: var(--ink);
-  background: var(--canvas);
-  font-size: 15px;
-  line-height: 1.5;
-  -webkit-font-smoothing: antialiased;
-}
-h1, h2, h3 { margin: 0; font-weight: 600; color: var(--ink); }
-a { color: var(--navy-500); }
-button { font-family: var(--font); }
-.tnum { font-variant-numeric: tabular-nums; }
-.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-
-/* ---- Buttons ---- */
-.btn {
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 8px 15px; border-radius: var(--radius);
-  border: 1px solid transparent; background: var(--navy-700); color: #fff;
-  font-size: 14px; font-weight: 500; cursor: pointer; line-height: 1.2;
-  transition: background .12s ease, border-color .12s ease;
-}
-.btn:hover { background: var(--navy-800); }
-.btn:focus-visible { outline: 2px solid var(--navy-500); outline-offset: 2px; }
-.btn--ghost { background: transparent; color: var(--navy-700); border-color: var(--line); }
-.btn--ghost:hover { background: var(--navy-100); }
-.btn--sm { padding: 5px 11px; font-size: 13px; }
-.btn:disabled { opacity: .55; cursor: default; }
-
-/* ---- Login ---- */
-#login {
-  min-height: 100vh; display: flex; align-items: center; justify-content: center;
-  padding: 24px;
-}
-.login-card {
-  width: 100%; max-width: 400px; background: var(--paper);
-  border: 1px solid var(--line); border-radius: var(--radius-lg);
-  box-shadow: 0 8px 30px rgba(15,30,56,0.10); overflow: hidden;
-}
-.login-card__accent { height: 4px; background: linear-gradient(90deg, var(--brass), var(--brass-lt)); }
-.login-card__body { padding: 36px 34px 34px; text-align: center; }
-.login-mark {
-  width: 52px; height: 52px; margin: 0 auto 18px; border-radius: 12px;
-  background: var(--navy-800); color: var(--brass-lt);
-  display: flex; align-items: center; justify-content: center;
-  font-weight: 700; font-size: 20px; letter-spacing: .5px;
-}
-.login-card h1 { font-size: 20px; margin-bottom: 6px; }
-.login-card p { color: var(--slate); font-size: 14px; margin: 0 0 26px; }
-.login-card .btn { width: 100%; justify-content: center; padding: 11px; }
-.login-err {
-  margin-top: 18px; font-size: 13px; color: var(--danger);
-  background: var(--overdue-bg); border-radius: var(--radius);
-  padding: 10px 12px; text-align: left; display: none;
-}
-
-/* ---- App shell ---- */
-#app { display: none; min-height: 100vh; }
-.shell { display: grid; grid-template-columns: var(--sidebar-w) 1fr; min-height: 100vh; }
-
-.sidebar {
-  background: var(--navy-900); color: #c7d0e0;
-  display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh;
-}
-.sidebar__brand {
-  display: flex; align-items: center; gap: 11px;
-  padding: 18px 18px 16px; border-bottom: 1px solid rgba(255,255,255,0.07);
-}
-.sidebar__mark {
-  width: 34px; height: 34px; border-radius: 9px; flex: none;
-  background: var(--navy-700); color: var(--brass-lt);
-  display: flex; align-items: center; justify-content: center;
-  font-weight: 700; font-size: 14px; letter-spacing: .5px;
-}
-.sidebar__brand b { color: #fff; font-size: 14px; font-weight: 600; display: block; line-height: 1.25; }
-.sidebar__brand span { color: var(--navy-300); font-size: 11.5px; }
-
-.nav { padding: 12px 10px; flex: 1; overflow-y: auto; }
-.nav a {
-  display: flex; align-items: center; gap: 11px;
-  padding: 9px 12px; margin-bottom: 2px; border-radius: var(--radius);
-  color: #b3bfd4; text-decoration: none; font-size: 14px; font-weight: 500;
-  border-left: 2px solid transparent; transition: background .1s ease, color .1s ease;
-}
-.nav a .ico { width: 17px; text-align: center; font-size: 15px; opacity: .85; }
-.nav a:hover { background: rgba(255,255,255,0.05); color: #fff; }
-.nav a.active {
-  background: var(--navy-700); color: #fff;
-  border-left-color: var(--brass); border-radius: 0 var(--radius) var(--radius) 0;
-}
-.nav a.active .ico { opacity: 1; color: var(--brass-lt); }
-
-.sidebar__foot {
-  padding: 13px 16px; border-top: 1px solid rgba(255,255,255,0.07);
-  font-size: 11.5px; color: var(--navy-300);
-}
-
-/* ---- Main ---- */
-.main { display: flex; flex-direction: column; min-width: 0; }
-.topbar {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 0 26px; height: 58px; background: var(--paper);
-  border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5;
-}
-.topbar h2 { font-size: 17px; font-weight: 600; }
-.topbar__user { display: flex; align-items: center; gap: 14px; }
-.topbar__who { text-align: right; line-height: 1.25; }
-.topbar__who b { font-size: 13.5px; font-weight: 600; display: block; }
-.topbar__who span { font-size: 12px; color: var(--muted); }
-
-.content { padding: 26px; max-width: 1180px; width: 100%; }
-
-/* ---- Cards / generic ---- */
-.card {
-  background: var(--paper); border: 1px solid var(--line);
-  border-radius: var(--radius-lg); box-shadow: var(--shadow-card);
-}
-.card__head {
-  padding: 15px 20px; border-bottom: 1px solid var(--line-2);
-  display: flex; align-items: center; justify-content: space-between;
-}
-.card__head h3 { font-size: 15px; }
-.card__body { padding: 20px; }
-
-.stub {
-  border: 1px dashed var(--line); border-radius: var(--radius-lg);
-  padding: 44px 30px; text-align: center; color: var(--slate); background: var(--paper);
-}
-.stub h3 { font-size: 16px; margin-bottom: 6px; color: var(--ink); }
-.stub p { margin: 0; font-size: 14px; }
-
-/* ---- Status badges (the compliance identity that runs through every screen) ---- */
-.badge {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 500;
-  line-height: 1.6;
-}
-.badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-.badge--clear   { color: var(--clear);   background: var(--clear-bg); }
-.badge--due     { color: var(--due);     background: var(--due-bg); }
-.badge--overdue { color: var(--overdue); background: var(--overdue-bg); }
-.badge--neutral { color: var(--slate);   background: var(--line-2); }
-
-/* ---- Loading ---- */
-.spinner {
-  width: 22px; height: 22px; border-radius: 50%;
-  border: 2.5px solid var(--line); border-top-color: var(--navy-500);
-  animation: spin .7s linear infinite; margin: 0 auto;
-}
-.loading { padding: 40px; text-align: center; color: var(--muted); font-size: 13px; }
-.loading .spinner { margin-bottom: 12px; }
-@keyframes spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2s; } }
-
-/* ---- Toast ---- */
-#toasts {
-  position: fixed; bottom: 22px; right: 22px; z-index: 100;
-  display: flex; flex-direction: column; gap: 10px; max-width: 340px;
-}
-.toast {
-  background: var(--navy-900); color: #fff; padding: 12px 16px;
-  border-radius: var(--radius); font-size: 13.5px; box-shadow: 0 6px 20px rgba(15,30,56,0.25);
-  border-left: 3px solid var(--navy-500); animation: toastIn .18s ease;
-}
-.toast--success { border-left-color: var(--clear); }
-.toast--error   { border-left-color: var(--overdue); }
-@keyframes toastIn { from { opacity: 0; transform: translateY(6px); } }
-
-/* ---- Stat row ---- */
-.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(158px, 1fr)); gap: 14px; margin-bottom: 22px; }
-.stat {
-  background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius-lg);
-  padding: 15px 18px; box-shadow: var(--shadow-card);
-}
-.stat b { display: block; font-size: 27px; font-weight: 600; line-height: 1.1; letter-spacing: -.5px; }
-.stat span { font-size: 12.5px; color: var(--slate); }
-.stat--due b { color: var(--due); }
-.stat--overdue b { color: var(--overdue); }
-.stat--clear b { color: var(--clear); }
-
-/* ---- Dashboard card stack ---- */
-.dash-grid { display: grid; grid-template-columns: 1fr; gap: 18px; }
-
-/* ---- Tables ---- */
-.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
-.tbl th {
-  text-align: left; font-size: 11.5px; text-transform: uppercase; letter-spacing: .4px;
-  color: var(--muted); font-weight: 600; padding: 0 14px 9px; border-bottom: 1px solid var(--line);
-}
-.tbl td { padding: 11px 14px; border-bottom: 1px solid var(--line-2); }
-.tbl tbody tr:last-child td { border-bottom: none; }
-.tbl tbody tr:hover { background: var(--canvas); }
-.tbl .num { text-align: right; font-variant-numeric: tabular-nums; }
-.tbl .nowrap { white-space: nowrap; }
-.tbl .strong { font-weight: 600; }
-.count-pill { font-size: 12.5px; color: var(--slate); background: var(--line-2); border-radius: 999px; padding: 2px 10px; font-weight: 500; }
-.empty-mini { padding: 28px; text-align: center; color: var(--muted); font-size: 13.5px; }
-
-/* ---- Forms / inputs ---- */
-.field {
-  width: 100%; padding: 9px 12px; border: 1px solid var(--line); border-radius: var(--radius);
-  font-size: 14px; font-family: var(--font); color: var(--ink); background: var(--paper);
-}
-.field:focus { outline: none; border-color: var(--navy-500); box-shadow: 0 0 0 3px rgba(47,84,136,.12); }
-select.field { cursor: pointer; }
-.label { display: block; font-size: 12px; font-weight: 600; color: var(--slate); margin-bottom: 6px; }
-.toolbar { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
-.toolbar .field { max-width: 340px; }
-.toolbar__spacer { flex: 1; }
-
-/* ---- Roster split + detail ---- */
-.split { display: grid; grid-template-columns: 1fr 372px; gap: 18px; align-items: start; }
-.roster-row { cursor: pointer; }
-.roster-row.selected td { background: var(--navy-100); }
-.detail { position: sticky; top: 78px; }
-.detail__name { font-size: 17px; font-weight: 600; margin-bottom: 2px; }
-.detail__sub { font-size: 13px; color: var(--slate); margin-bottom: 18px; }
-.detail__row {
-  display: flex; justify-content: space-between; align-items: center; gap: 14px;
-  padding: 10px 0; border-bottom: 1px solid var(--line-2); font-size: 13.5px;
-}
-.detail__row:last-of-type { border-bottom: none; }
-.detail__row .k { color: var(--slate); flex: none; }
-.detail__row .v { text-align: right; }
-.detail__edit { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
-.detail__edit .row { display: flex; gap: 10px; align-items: flex-end; }
-.detail__edit .row .field { flex: 1; }
-.detail__empty { color: var(--muted); font-size: 13.5px; text-align: center; padding: 44px 12px; }
-
-@media (max-width: 900px) {
-  .split { grid-template-columns: 1fr; }
-  .detail { position: static; }
-  .stats { grid-template-columns: 1fr; }
-}
-
-/* ---- Imports ---- */
-.seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; margin-bottom: 20px; flex-wrap: wrap; }
-.seg button {
-  padding: 8px 17px; border: none; background: var(--paper); color: var(--slate);
-  font-size: 14px; font-weight: 500; cursor: pointer; border-right: 1px solid var(--line);
-}
-.seg button:last-child { border-right: none; }
-.seg button.active { background: var(--navy-700); color: #fff; }
-.dropzone {
-  border: 2px dashed var(--line); border-radius: var(--radius-lg); padding: 42px 30px;
-  text-align: center; background: var(--paper); cursor: pointer; transition: border-color .12s, background .12s;
-}
-.dropzone:hover, .dropzone.drag { border-color: var(--navy-500); background: var(--navy-100); }
-.dropzone .dz-ico { font-size: 26px; color: var(--navy-300); }
-.dropzone h3 { font-size: 15px; margin: 10px 0 4px; }
-.dropzone p { margin: 0; font-size: 13px; color: var(--muted); }
-.import-note {
-  font-size: 13px; color: var(--slate); margin-bottom: 16px;
-  background: var(--navy-100); border-radius: var(--radius); padding: 11px 14px;
-}
-.import-note.warn { background: var(--due-bg); color: var(--due); }
-.progress { height: 8px; background: var(--line-2); border-radius: 999px; overflow: hidden; margin: 8px 0 4px; }
-.progress__bar { height: 100%; background: var(--navy-500); width: 0; transition: width .2s ease; }
-
-/* ---- Modal ---- */
-.modal-backdrop {
-  position: fixed; inset: 0; background: rgba(15,30,56,.42); z-index: 200;
-  display: flex; align-items: center; justify-content: center; padding: 20px;
-  animation: fadeIn .12s ease;
-}
-@keyframes fadeIn { from { opacity: 0; } }
-.modal {
-  background: var(--paper); border-radius: var(--radius-lg); width: 100%; max-width: 480px;
-  box-shadow: 0 20px 60px rgba(15,30,56,.3); max-height: 90vh; overflow: auto;
-}
-.modal__head { padding: 16px 20px; border-bottom: 1px solid var(--line-2); display: flex; justify-content: space-between; align-items: center; }
-.modal__head h3 { font-size: 16px; }
-.modal__body { padding: 20px; }
-.modal__foot { padding: 14px 20px; border-top: 1px solid var(--line-2); display: flex; gap: 10px; justify-content: flex-end; }
-.x-btn { background: none; border: none; font-size: 22px; color: var(--muted); cursor: pointer; line-height: 1; padding: 0 4px; }
-.x-btn:hover { color: var(--ink); }
-
-/* ---- Forms ---- */
-.form-group { margin-bottom: 15px; }
-textarea.field { resize: vertical; min-height: 74px; line-height: 1.45; }
-.help { font-size: 12px; color: var(--muted); margin-top: 5px; }
-.check { display: flex; align-items: center; gap: 9px; font-size: 14px; cursor: pointer; user-select: none; }
-.check input { width: 16px; height: 16px; accent-color: var(--navy-700); }
-.form-actions { display: flex; gap: 10px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line-2); }
-
-/* ---- Export checklist ---- */
-.export-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin: 4px 0 20px; }
-.export-item {
-  display: flex; align-items: center; gap: 10px; padding: 12px 14px;
-  border: 1px solid var(--line); border-radius: var(--radius); cursor: pointer; background: var(--paper);
-}
-.export-item:hover { border-color: var(--navy-300); }
-.export-item.on { border-color: var(--navy-500); background: var(--navy-100); }
-.export-item input { width: 16px; height: 16px; accent-color: var(--navy-700); }
-.export-item .lbl b { font-size: 14px; display: block; }
-.export-item .lbl span { font-size: 12px; color: var(--muted); }
-
-@media (max-width: 640px) { .export-list { grid-template-columns: 1fr; } }
-
-/* ---- Admin sections ---- */
-.section-title {
-  font-size: 11.5px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted);
-  font-weight: 600; margin: 24px 0 14px; padding-bottom: 7px; border-bottom: 1px solid var(--line-2);
-}
-.section-title:first-child { margin-top: 0; }
-.field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-@media (max-width: 560px) { .field-grid { grid-template-columns: 1fr; } }
-
-/* ---- Legacy migration review queue ---- */
-.migrate-drop-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
-@media (max-width: 760px) { .migrate-drop-row { grid-template-columns: 1fr; } }
-.migrate-drop-row .dropzone { padding: 26px 18px; }
-.migrate-drop-row .dropzone.done { border-color: var(--clear); background: var(--clear-bg); }
-.flag-row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--line-2); }
-.flag-row:last-child { border-bottom: none; }
-.flag-row .who { flex: 1; min-width: 0; }
-.flag-row .who b { display: block; font-size: 14px; }
-.flag-row .who span { font-size: 12px; color: var(--muted); }
-.flag-row .raw { font-size: 12.5px; color: var(--slate); background: var(--canvas); border-radius: 6px; padding: 3px 8px; font-family: ui-monospace, monospace; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.flag-row .choices { display: flex; gap: 6px; flex: none; }
-.flag-row .choices button { padding: 5px 10px; font-size: 12.5px; border-radius: 6px; border: 1px solid var(--line); background: var(--paper); cursor: pointer; }
-.flag-row .choices button.picked { background: var(--navy-700); color: #fff; border-color: var(--navy-700); }
-.migrate-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 18px; }
-
-/* ---- Format hint tooltip (hover/focus reminder on upload dropzones) ---- */
-.format-hint { position: relative; display: inline-flex; vertical-align: middle; margin-left: 8px; }
-.format-hint__btn {
-  width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--line);
-  background: var(--canvas); color: var(--slate); font-size: 11px; font-weight: 700;
-  display: flex; align-items: center; justify-content: center; cursor: help; line-height: 1; padding: 0;
-}
-.format-hint__btn:hover, .format-hint__btn:focus-visible { background: var(--navy-100); border-color: var(--navy-300); color: var(--navy-700); outline: none; }
-.format-hint__pop {
-  position: absolute; top: 26px; left: 0; z-index: 40; width: max-content; max-width: 360px;
-  background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius-lg);
-  box-shadow: 0 10px 30px rgba(15,30,56,.16); padding: 12px 14px; text-align: left;
-  opacity: 0; pointer-events: none; transform: translateY(-4px);
-  transition: opacity .12s ease, transform .12s ease;
-}
-.format-hint:hover .format-hint__pop, .format-hint:focus-within .format-hint__pop { opacity: 1; pointer-events: auto; transform: translateY(0); }
-.format-hint__source { font-size: 11.5px; color: var(--slate); margin-bottom: 8px; }
-.format-hint__seclabel { font-size: 11px; font-weight: 600; color: var(--ink); margin: 8px 0 4px; }
-.format-hint__seclabel:first-child { margin-top: 0; }
-.format-hint__scroll { overflow-x: auto; }
-.format-hint__tbl { border-collapse: collapse; font-size: 11px; white-space: nowrap; }
-.format-hint__tbl th, .format-hint__tbl td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; }
-.format-hint__tbl th { background: var(--navy-100); color: var(--navy-700); font-weight: 600; }
-.format-hint__tbl td { color: var(--slate); }
-.format-hint__note { font-size: 11.5px; color: var(--muted); margin-top: 8px; max-width: 320px; white-space: normal; }
-@media (max-width: 480px) { .format-hint__pop { left: auto; right: -8px; max-width: 82vw; } }
-
-/* ---- Background job indicator (uploads keep running across screens) ---- */
-#jobPill {
-  position: fixed; left: 22px; bottom: 22px; z-index: 110; display: none;
-  background: var(--navy-900); color: #fff; border-radius: 999px; padding: 9px 16px;
-  font-size: 13px; box-shadow: 0 6px 20px rgba(15,30,56,.3); align-items: center; gap: 10px;
-}
-#jobPill .spinner { width: 14px; height: 14px; border-width: 2px; margin: 0; border-color: rgba(255,255,255,.3); border-top-color: #fff; }
-
-/* ---- Responsive ---- */
-@media (max-width: 760px) {
-  .shell { grid-template-columns: 1fr; }
-  .sidebar { position: static; height: auto; flex-direction: row; align-items: center; overflow-x: auto; }
-  .sidebar__brand { border-bottom: none; border-right: 1px solid rgba(255,255,255,0.07); }
-  .nav { display: flex; padding: 8px; }
-  .nav a { margin-bottom: 0; white-space: nowrap; border-left: none; border-bottom: 2px solid transparent; }
-  .nav a.active { border-radius: var(--radius); border-left: none; border-bottom-color: var(--brass); }
-  .sidebar__foot { display: none; }
-  .content { padding: 18px; }
-}
-</style>
+<title>Personnel Support</title>
+<link rel="stylesheet" href="styles.css?v=2026.10.07-1">
+<!-- Microsoft sign-in library 2.35.0. The integrity hash makes the browser refuse any copy that isn't
+     exactly Microsoft's published file (hash from Microsoft's MSAL CDN documentation). Both CDN addresses
+     serve the same file; the second is a fallback if the first is blocked. -->
+<script src="https://alcdn.msauth.net/browser/2.35.0/js/msal-browser.min.js"
+  integrity="sha384-PARf28kmic36Ve+O3DnUerRXFtOQ7ZDqRDGpLcbljly5/N39T2OV3kt3QsWOKeAX" crossorigin="anonymous"
+  onerror="this.onerror=null;var s=document.createElement('script');s.src='https://alcdn.msftauth.net/browser/2.35.0/js/msal-browser.min.js';s.integrity=this.integrity;s.crossOrigin='anonymous';document.head.appendChild(s);"></script>
 </head>
 <body>
 
-<!-- ============ LOGIN VIEW ============ -->
-<section id="login">
-  <div class="login-card">
-    <div class="login-card__accent"></div>
-    <div class="login-card__body">
-      <div class="login-mark">DS</div>
-      <h1>Driving Safety</h1>
-      <p>Dallas Police Department</p>
-      <button id="signInBtn" class="btn">Sign in with city account</button>
-      <div id="loginErr" class="login-err"></div>
-    </div>
+<header class="app-header">
+  <div>
+    <h1>Personnel Support</h1>
+    <div class="sub">Dallas Police Department, Personnel Support Team</div>
   </div>
+  <div id="userBox"></div>
+</header>
+
+<div id="versionBanner" class="version-banner" role="alert" hidden></div>
+
+<!-- ======= Gates ======= -->
+<section id="signInScreen" class="gate">
+  <p>Sign in with your dallaspolice.gov account to continue.</p>
+  <button id="signInBtn" type="button" class="btn btn-navy btn-lg">Sign in</button>
+  <p id="signInAddrMsg" class="small narrow error-text" hidden></p>
 </section>
 
-<!-- ============ APP SHELL ============ -->
-<div id="app">
-  <div class="shell">
-    <aside class="sidebar">
-      <div class="sidebar__brand">
-        <div class="sidebar__mark">DS</div>
-        <div>
-          <b>Driving Safety</b>
-          <span>Dallas Police Dept</span>
+<section id="loadingScreen" class="gate" hidden>
+  <p class="muted">Loading your workspace...</p>
+</section>
+
+<section id="notAuthorizedScreen" class="gate" hidden>
+  <h2>Access not available</h2>
+  <p id="notAuthMsg" class="muted narrow"></p>
+  <button id="notAuthSignOutBtn" type="button" class="btn btn-ghost">Sign out</button>
+</section>
+
+<!-- ======= App ======= -->
+<main id="mainApp" hidden>
+  <nav class="tabs" role="tablist">
+    <button type="button" class="tab active" role="tab" aria-selected="true" data-view="dashView">Dashboard <span id="openInquiryBadge" class="tab-badge" hidden></span></button>
+    <button type="button" class="tab" role="tab" aria-selected="false" data-view="specialView">Special Projects Inquiries <span id="specialBadge" class="tab-badge" hidden></span></button>
+    <button type="button" class="tab" role="tab" aria-selected="false" data-view="processView">Employee processes</button>
+    <button type="button" class="tab" role="tab" aria-selected="false" data-view="employeeView">Employees</button>
+    <button type="button" class="tab" role="tab" aria-selected="false" data-view="workView">Tracked work <span id="myWorkBadge" class="tab-badge" hidden></span></button>
+    <button type="button" class="tab" role="tab" aria-selected="false" data-view="reportsView">Reports</button>
+    <button type="button" class="tab" role="tab" aria-selected="false" data-view="auditView">Audit log</button>
+    <button type="button" class="tab" role="tab" aria-selected="false" data-view="adminView" data-admin-only hidden>Admin</button>
+  </nav>
+
+  <!-- DASHBOARD: inquiries (left) + activity logging (right) -->
+  <div class="view active" id="dashView">
+    <div class="dash">
+      <section class="dash-panel" aria-labelledby="inqHeading">
+        <div class="dash-head">
+          <div class="dash-title">
+            <h2 id="inqHeading">Inquiries</h2>
+            <span id="inqOpenCount" class="head-count"></span>
+          </div>
+          <button type="button" class="btn btn-ghost btn-sm" id="openManualEntryBtn">New manual inquiry</button>
+        </div>
+        <div class="dash-tools">
+          <select id="filterStatus" aria-label="Filter by status"></select>
+          <input type="text" id="searchBox" placeholder="Search name, email, title, #" aria-label="Search inquiries">
+          <label class="check small"><input type="checkbox" id="hideClosedCheckbox" checked> Open only</label>
+        </div>
+        <div class="dash-scroll">
+          <table class="data inq" id="ticketsTable">
+            <thead>
+              <tr>
+                <th data-sort="ID">#</th>
+                <th data-sort="Title">Inquiry</th>
+                <th data-sort="Received">Received</th>
+                <th data-sort="Status">Status</th>
+                <th><span class="visually-hidden">Quick actions</span></th>
+              </tr>
+            </thead>
+            <tbody id="ticketsBody"></tbody>
+          </table>
+          <div id="emptyState" class="empty-block" hidden><p>No inquiries match these filters.</p></div>
+        </div>
+      </section>
+
+      <section class="dash-panel" aria-labelledby="logHeading">
+        <div class="dash-head">
+          <div class="dash-title"><h2 id="logHeading">Log completed work</h2></div>
+          <div class="segmented team-toggle" id="teamToggle" role="group" aria-label="Show activities for team"></div>
+        </div>
+        <div class="how">
+          <div id="todaySummary" class="today-line"></div>
+          Type the number and press Enter. To log several at once, separate them with spaces or commas.
+        </div>
+        <div class="dash-scroll">
+          <div id="board"></div>
+          <details class="mine" id="mineDetails">
+            <summary>Your recent entries <span class="muted small">(to fix a mistake)</span></summary>
+            <div id="myRecent"></div>
+          </details>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- SPECIAL PROJECT INQUIRIES: same interface as the Dashboard's inquiry panel -->
+  <div class="view" id="specialView">
+    <section class="panel special-panel" aria-labelledby="spHeading">
+      <div class="dash-head">
+        <div class="dash-title">
+          <h2 id="spHeading">Special Projects Inquiries</h2>
+          <span id="spOpenCount" class="head-count"></span>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" id="spOpenManualEntryBtn">New manual inquiry</button>
+      </div>
+      <p class="muted small sp-intro">Inquiries set aside from the Dashboard for a special project. Work them the same way: open one to update its status and notes. <strong>Move back</strong> returns an inquiry to the Dashboard.</p>
+      <p class="small" id="spOffNote" hidden style="background:#FFF6D6;border:1px solid #E8C94A;border-radius:6px;padding:8px 12px;">Special Projects Inquiries is <strong>turned off</strong>, so its tab is hidden and nothing new can be moved here. You can still work the inquiries below or <strong>Move back</strong> them to the Dashboard. <button type="button" class="link-btn" id="spBackToAdmin" data-admin-only hidden>Back to Admin</button></p>
+      <div class="dash-tools">
+        <select id="spFilterStatus" aria-label="Filter by status"></select>
+        <input type="text" id="spSearchBox" placeholder="Search name, email, title, #" aria-label="Search special project inquiries">
+        <label class="check small"><input type="checkbox" id="spOpenOnly" checked> Open only</label>
+      </div>
+      <div class="table-scroll">
+        <table class="data inq" id="spTicketsTable">
+          <thead>
+            <tr>
+              <th data-sort="ID">#</th>
+              <th data-sort="Title">Inquiry</th>
+              <th data-sort="Received">Received</th>
+              <th data-sort="Status">Status</th>
+              <th><span class="visually-hidden">Quick actions</span></th>
+            </tr>
+          </thead>
+          <tbody id="spTicketsBody"></tbody>
+        </table>
+        <div id="spEmptyState" class="empty-block" hidden></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- 2.0 EMPLOYEE PROCESSES: one table per process, like the old spreadsheet tabs -->
+  <div class="view" id="processView">
+    <div id="procEmpty" class="empty-block" hidden>
+      <p><strong>No employee processes yet.</strong></p>
+      <p>An admin can install the starter processes in Admin → Employee processes.</p>
+    </div>
+    <div id="procMain">
+      <div class="toolbar">
+        <select id="procSelect" aria-label="Process"></select>
+        <select id="procStatus" aria-label="Status">
+          <option value="open">Open cases</option>
+          <option value="all">All cases</option>
+          <option value="closed">Closed cases</option>
+        </select>
+        <input type="text" id="procSearch" placeholder="Search name, employee #, any field" aria-label="Search cases">
+        <button type="button" class="btn btn-ghost btn-sm" id="procRefresh">Refresh</button>
+        <div class="toolbar-end">
+          <button type="button" class="btn btn-ghost" id="procExportOne">Export to Excel</button>
+          <button type="button" class="btn btn-ghost" id="procExportAll">Export all processes</button>
         </div>
       </div>
-      <nav class="nav" id="nav"><!-- links injected --></nav>
-      <div class="sidebar__foot" id="sidebarFoot"></div>
-    </aside>
+      <div class="toolbar proc-start">
+        <label class="inline-label">Start a case for employee #
+          <input type="text" id="procStartId" inputmode="numeric" class="narrow-input wide-num" autocomplete="off">
+        </label>
+        <button type="button" class="btn btn-navy btn-sm" id="procStartBtn">Start</button>
+        <span class="save-msg" id="procStartMsg"></span>
+        <span class="muted small" id="procCount"></span>
+      </div>
+      <div class="table-scroll proc-table">
+        <table class="data">
+          <thead id="procHead"></thead>
+          <tbody id="procBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
 
-    <main class="main">
-      <header class="topbar">
-        <h2 id="pageTitle">Dashboard</h2>
-        <div class="topbar__user">
-          <div class="topbar__who">
-            <b id="userName">—</b>
-            <span id="userEmail">—</span>
-          </div>
-          <button id="signOutBtn" class="btn btn--ghost btn--sm">Sign out</button>
+  <!-- 2.0 EMPLOYEES (roster) -->
+  <div class="view" id="employeeView">
+    <div class="emp-layout">
+      <section class="panel emp-search">
+        <div class="toolbar">
+          <input type="text" id="empSearch" placeholder="Name or employee #" aria-label="Search employees">
+          <label class="check small"><input type="checkbox" id="empShowInactive"> Include inactive</label>
         </div>
-      </header>
-      <div class="content" id="content"><!-- screen renders here --></div>
-    </main>
+        <div class="muted small" id="empCount"></div>
+        <div id="empResults"></div>
+        <button type="button" class="link-btn" id="empAddBtn">Someone missing? Add an employee</button>
+      </section>
+      <section class="panel emp-detail" id="empDetail" hidden></section>
+    </div>
+  </div>
+
+  <!-- TRACKED WORK -->
+  <div class="view" id="workView">
+    <div class="toolbar">
+      <div class="segmented" id="workFilters" role="group" aria-label="Show">
+        <button type="button" data-filter="mine" class="active" aria-pressed="true">Mine <span class="seg-count"></span></button>
+        <button type="button" data-filter="open" aria-pressed="false">All open <span class="seg-count"></span></button>
+        <button type="button" data-filter="waiting" aria-pressed="false">Waiting on other offices <span class="seg-count"></span></button>
+        <button type="button" data-filter="closed" aria-pressed="false">Recently closed <span class="seg-count"></span></button>
+      </div>
+      <span id="workTypeChip" class="filter-chip" hidden></span>
+      <input type="text" id="workSearch" placeholder="Search name, number, owner" aria-label="Search tracked work">
+    </div>
+    <div class="table-scroll" id="workTableWrap">
+      <table class="data">
+        <thead><tr><th>Item</th><th>Owner</th><th>Progress</th><th>Next step</th><th>Open for</th><th>Updated</th></tr></thead>
+        <tbody id="workBody"></tbody>
+      </table>
+    </div>
+    <div id="workEmpty" class="empty-block" hidden></div>
+  </div>
+
+  <!-- REPORTS -->
+  <div class="view" id="reportsView">
+    <section class="panel backup-panel">
+      <div class="panel-head">
+        <div>
+          <h3>Full backup</h3>
+          <p class="muted small">One Excel workbook with everything: each employee process on its own tab (like the original tracking workbook), the employee roster, other tracked work, the activity log, and all case history and notes. Download one regularly and save it to the team's records folder, so the records are safe even if the app is ever unavailable.</p>
+          <p class="small" id="backupLast"></p>
+        </div>
+        <button type="button" class="btn btn-navy" id="backupBtn">Download full backup</button>
+      </div>
+      <p id="backupStatus" class="muted small"></p>
+    </section>
+
+    <section class="panel">
+      <div class="toolbar">
+        <select id="rpTeam" aria-label="Team"><option value="">All teams</option><option value="SRU">SRU</option><option value="PSU">PSU</option></select>
+        <select id="rpPreset" aria-label="Date range">
+          <option value="today">Today</option>
+          <option value="thisWeek">This week</option>
+          <option value="lastWeek">Last week</option>
+          <option value="thisMonth" selected>This month</option>
+          <option value="lastMonth">Last month</option>
+          <option value="last30">Last 30 days</option>
+          <option value="custom">Custom range</option>
+        </select>
+        <label class="inline-label">From <input type="date" id="rpFrom"></label>
+        <label class="inline-label">To <input type="date" id="rpTo"></label>
+        <button type="button" class="btn btn-navy" id="rpRunBtn">Show report</button>
+        <div class="toolbar-end">
+          <button type="button" class="btn btn-ghost" id="rpExportSummaryBtn">Export summary</button>
+          <button type="button" class="btn btn-ghost" id="rpExportEntriesBtn">Export all entries</button>
+        </div>
+      </div>
+      <p id="rpSummary" class="report-summary"></p>
+      <div id="rpMatrix"></div>
+    </section>
+
+    <section class="panel">
+      <h3>Look up an employee or reference number</h3>
+      <p class="muted small">Shows everything ever logged against that number, including removed entries.</p>
+      <div class="toolbar">
+        <input type="text" id="lookupInput" placeholder="Employee # or reference" aria-label="Number to look up">
+        <button type="button" class="btn btn-navy" id="lookupBtn">Look up</button>
+      </div>
+      <div id="lookupResults"></div>
+    </section>
+  </div>
+
+  <!-- AUDIT LOG -->
+  <div class="view" id="auditView">
+    <div class="toolbar">
+      <select id="auditArea" aria-label="Area"><option value="">All areas</option></select>
+      <select id="auditDays" aria-label="Time period">
+        <option value="1">Today</option>
+        <option value="7">Last 7 days</option>
+        <option value="30" selected>Last 30 days</option>
+        <option value="90">Last 90 days</option>
+        <option value="365">Last year</option>
+      </select>
+      <input type="text" id="auditSearchBox" placeholder="Search staff, action, record #" aria-label="Search audit log">
+      <div class="stat-pills" id="auditPills"></div>
+      <div class="toolbar-end">
+        <button type="button" class="btn btn-ghost" id="exportAuditCsvBtn">Export</button>
+      </div>
+    </div>
+    <p class="muted small">Everything people do in the portal: inquiry changes, logged activity, tracked work, admin changes, sign-ins, exports and lookups.</p>
+    <div class="table-scroll">
+      <table class="data">
+        <thead><tr><th>Time</th><th>Area</th><th>Record</th><th>Staff member</th><th>Action</th></tr></thead>
+        <tbody id="auditBody"></tbody>
+      </table>
+    </div>
+    <div id="auditEmptyState" class="empty-block" hidden><p>No audit entries match.</p></div>
+  </div>
+
+  <!-- ADMIN -->
+  <div class="view" id="adminView" data-admin-only hidden>
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h3>SharePoint setup check</h3>
+          <p class="muted small">Compares every list and column this app expects with what's on the SharePoint site. Run it after creating lists or changing them in SharePoint. It only reads; nothing is changed.</p>
+        </div>
+        <button type="button" class="btn btn-navy" id="runSetupCheckBtn">Check SharePoint setup</button>
+      </div>
+      <div id="setupCheckResults"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h3>Audit coverage check</h3>
+          <p class="muted small">SharePoint records who last changed every item, however it was changed. This compares those records with the audit log and lists any change that has no audit entry. It only reads; nothing is changed.</p>
+        </div>
+        <div class="toolbar">
+          <select id="coverageDays" aria-label="Period">
+            <option value="1">Today</option>
+            <option value="7" selected>Last 7 days</option>
+            <option value="30">Last 30 days</option>
+            <option value="90">Last 90 days</option>
+          </select>
+          <button type="button" class="btn btn-navy" id="coverageBtn">Check audit coverage</button>
+        </div>
+      </div>
+      <div id="coverageResults"></div>
+    </section>
+
+    <section class="panel">
+      <h3>Employee roster</h3>
+      <p class="muted small">Upload the monthly roster report (Excel or CSV) from the SQL report server. It's read on this computer and only the roster columns are saved to SharePoint. New people are added, changes are updated, and people no longer on the report are marked inactive (never deleted). You'll see a preview before anything is saved.</p>
+      <input type="file" id="rosterFile" accept=".xlsx,.xls,.csv" aria-label="Roster report file">
+      <div id="rosterImportArea"></div>
+    </section>
+
+    <section class="panel">
+      <h3>Employee processes</h3>
+      <p class="muted small">Ten processes built from the team's leave tracking workbook: Advanced Sick Leave, Extension of Probation &amp; Training, DPD Phase Down, Leave of Absence, Tuition Reimbursement, Paid Parental Leave, Return to Patrol, Trade Time, LSAP and LSAP Recertification. Each comes with its fields and a checklist linked to them. After installing, edit any of them under Activities below.</p>
+      <div class="toolbar">
+        <button type="button" class="btn btn-navy" id="installStartersBtn">Install or update starter processes</button>
+        <span class="muted small" id="starterStatus"></span>
+      </div>
+      <div id="starterResult"></div>
+    </section>
+
+    <section class="panel">
+      <h3>Legacy spreadsheet import</h3>
+      <p class="muted small">Bring in the old tracking workbook (all tabs). It's read on this computer; nothing is uploaded except the cases themselves to SharePoint. You'll see a preview with counts and any data problems first. Running it again skips rows already imported.</p>
+      <input type="file" id="legacyFile" accept=".xlsx,.xls" aria-label="Legacy workbook">
+      <div id="legacyArea"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h3>Activities</h3>
+          <p class="muted small">Each active activity is a row in the logging panel on the Dashboard. Rows are grouped by category, and the order number sets both row order and category order.</p>
+        </div>
+        <button type="button" class="btn btn-navy" id="addTypeBtn">Add activity</button>
+      </div>
+      <label class="check small"><input type="checkbox" id="showInactiveTypes"> Show activities that are turned off</label>
+      <div id="typesTable"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h3>Special Projects Inquiries</h3>
+          <p class="muted small">Turn this off when there's no special project running. While it's off, the tab and the Special Projects buttons are removed for everyone, and nothing new can be moved there. Inquiries already there stay put; admins can still open the page with the link below to work them or move them back. Turning it on again restores everything.</p>
+        </div>
+        <button type="button" class="btn btn-navy" id="specialSwitchBtn" hidden>Turn off</button>
+      </div>
+      <p class="small" id="specialSwitchStatus"></p>
+      <p class="small"><button type="button" class="link-btn" id="specialOpenLink">Open the Special Projects Inquiries page</button> <span class="muted" id="specialOpenCount"></span></p>
+    </section>
+
+    <section class="panel">
+      <h3>Aging alerts for inquiries</h3>
+      <p class="muted small">Open inquiries get a colored stripe once they pass a threshold. If an inquiry passes several, the longest one wins.</p>
+      <div class="field-block">
+        <span class="field-label">Color</span>
+        <div id="colorPalette" class="palette"></div>
+      </div>
+      <div class="toolbar">
+        <label class="stack-label">After
+          <input type="number" id="ruleThresholdValue" min="1" value="24" class="narrow-input">
+        </label>
+        <label class="stack-label">Unit
+          <select id="ruleThresholdUnit"><option value="Hours">Hours</option><option value="Days">Days</option></select>
+        </label>
+        <label class="check" id="excludeWeekendsWrap" hidden><input type="checkbox" id="ruleExcludeWeekends"> Business days only</label>
+        <button type="button" class="btn btn-navy" id="createRuleBtn">Create alert rule</button>
+      </div>
+      <div id="rulesList"></div>
+    </section>
+
+    <section class="panel">
+      <h3>Team access</h3>
+      <p class="muted small">People on this list can sign in. Matching ignores the domain, so a dallaspolice.gov or dallascityhall.com address covers both. Admins see this tab. A person's team sets which activities their Dashboard opens on; they can still switch.</p>
+      <div class="toolbar">
+        <input type="email" id="newStaffEmail" placeholder="firstname.lastname@dallaspolice.gov" class="grow-input" aria-label="Email address">
+        <select id="newStaffRole" aria-label="Role"><option value="Staff">Staff</option><option value="Admin">Admin</option></select>
+        <select id="newStaffTeam" aria-label="Team"><option value="">No team</option><option value="SRU">SRU</option><option value="PSU">PSU</option></select>
+        <button type="button" class="btn btn-navy" id="addStaffBtn">Add person</button>
+      </div>
+      <div id="staffSaveMsg" class="save-msg"></div>
+      <div id="staffList"></div>
+    </section>
+  </div>
+</main>
+
+<!-- ======= Inquiry modal ======= -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-header">
+      <h2 id="modalTitle">Inquiry</h2>
+      <button type="button" id="modalClose" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="field-row">
+        <label for="mRequesterName">Requestor</label>
+        <div>
+          <input type="text" id="mRequesterName">
+          <div class="hint" id="mRequesterNameHint" hidden>Guessed from the email address. Correct it if it's wrong.</div>
+        </div>
+      </div>
+      <div class="field-row"><label>Title</label><div class="val" id="mReq"></div></div>
+      <div class="field-row"><label>Contact</label><div class="val" id="mEmail"></div></div>
+      <div class="field-row"><label>Received</label><div class="val" id="mCreated"></div></div>
+      <div class="field-row">
+        <label>Problem <button type="button" id="problemLockBtn" class="icon-btn" title="Unlock to trim (not for adding notes)">🔒</button></label>
+        <div>
+          <div class="val problem-box" id="mProblem"></div>
+          <textarea id="mProblemEdit" class="problem-edit" hidden></textarea>
+          <div class="hint warn-text" id="problemEditHint" hidden>Unlocked for trimming only. Put new information in Notes. Locks again when you save.</div>
+        </div>
+      </div>
+      <div class="field-row">
+        <label></label>
+        <div>
+          <a href="#" id="toggleMergeLink" class="merge-link">Duplicate or reply? Merge into another inquiry instead</a>
+          <div id="mergePanel" class="merge-panel" hidden>
+            <select id="mergeTargetSelect" aria-label="Original inquiry"></select>
+            <div class="hint">Closes #<span id="mergeSourceId"></span> and copies its problem text into the original inquiry's notes.</div>
+            <button type="button" class="btn btn-navy" id="mergeBtn">Merge and close this inquiry</button>
+          </div>
+        </div>
+      </div>
+      <div class="field-row">
+        <label for="mStatus">Status</label>
+        <select id="mStatus">
+          <option value="New">New</option>
+          <option value="In Progress">In Progress</option>
+          <option value="Completed">Completed</option>
+          <option value="Merged">Merged</option>
+          <option value="No Action Required">No Action Required</option>
+        </select>
+      </div>
+      <div class="field-row">
+        <label for="mInternal">Notes</label>
+        <div>
+          <textarea id="mInternal" placeholder="Staff-only notes, e.g. what was done and when you replied in Outlook"></textarea>
+          <div class="hint">Replies to the requestor are sent from Outlook. The portal never emails anyone.</div>
+        </div>
+      </div>
+      <div class="field-row" id="completedMetaRow" hidden>
+        <label>Completed</label>
+        <div class="val" id="mCompletedMeta"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-ghost" id="mQueueBtn">Move to Special Projects Inquiries</button>
+      <button type="button" class="btn btn-ghost" id="mNoActionBtn" title="Close without a response. It doesn't count as a resolved inquiry.">No Action Required</button>
+      <div class="save-msg" id="saveMsg"></div>
+      <button type="button" class="btn btn-ghost" id="cancelBtn">Cancel</button>
+      <button type="button" class="btn btn-red" id="saveBtn">Save changes</button>
+    </div>
   </div>
 </div>
 
-<div id="toasts" aria-live="polite"></div>
-<div id="jobPill" role="status" aria-live="polite"><div class="spinner"></div><span id="jobText"></span></div>
+<!-- ======= Manual inquiry modal ======= -->
+<div class="modal-overlay" id="manualEntryOverlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="meTitleHeading">
+    <div class="modal-header">
+      <h2 id="meTitleHeading">New manual inquiry</h2>
+      <button type="button" id="manualEntryClose" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="field-row">
+        <label>Contact method</label>
+        <div class="radio-row">
+          <label class="check"><input type="radio" name="meMethod" id="meMethodPhone" value="Phone" checked> Phone</label>
+          <label class="check"><input type="radio" name="meMethod" id="meMethodEmail" value="Email"> Email</label>
+          <label class="check"><input type="radio" name="meMethod" id="meMethodWalkin" value="Walk-in"> Walk-in</label>
+          <label class="check"><input type="radio" name="meMethod" id="meMethodSn" value="ServiceNow"> ServiceNow</label>
+        </div>
+      </div>
+      <div class="field-row"><label for="meRequesterName">Requestor</label><input type="text" id="meRequesterName" placeholder="First Last"></div>
+      <div class="field-row" id="mePhoneRow"><label for="mePhoneNumber">Phone</label><input type="text" id="mePhoneNumber" placeholder="214-555-0100"></div>
+      <div class="field-row" id="meEmailRow" hidden><label for="meEmail">Email</label><input type="email" id="meEmail" placeholder="name@dallaspolice.gov"></div>
+      <div class="field-row" id="meSnRow" hidden><label for="meSnNumber">ServiceNow case #</label><input type="text" id="meSnNumber" placeholder="e.g. CS0012345" autocomplete="off" spellcheck="false"></div>
+      <div class="field-row"><label for="meTitle">Problem title</label><input type="text" id="meTitle" placeholder="Short summary"></div>
+      <div class="field-row"><label for="meDescription">Description</label><textarea id="meDescription" placeholder="What happened, what was discussed"></textarea></div>
+      <div class="field-row">
+        <label for="meStatus">Status</label>
+        <select id="meStatus">
+          <option value="New">New</option>
+          <option value="In Progress">In Progress</option>
+          <option value="Completed">Completed</option>
+        </select>
+      </div>
+      <div class="field-row"><label for="meInternal">Notes</label><textarea id="meInternal" placeholder="Staff-only notes (optional)"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <div class="save-msg" id="meSaveMsg"></div>
+      <button type="button" class="btn btn-ghost" id="meCancelBtn">Cancel</button>
+      <button type="button" class="btn btn-navy" id="meSaveBtn">Create inquiry</button>
+    </div>
+  </div>
+</div>
 
-<!-- ============ MSAL (v2.35.0, CDN with fallback) ============ -->
-<script src="https://alcdn.msauth.net/browser/2.35.0/js/msal-browser.min.js"
-        onerror="loadMsalFallback()"></script>
+<!-- ======= Activity type modal ======= -->
+<div class="modal-overlay" id="typeModalOverlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="typeModalTitle">
+    <div class="modal-header">
+      <h2 id="typeModalTitle">Add activity</h2>
+      <button type="button" id="typeModalClose" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="field-row">
+        <label for="atName">Name</label>
+        <div>
+          <input type="text" id="atName" placeholder="e.g. Exit processed">
+          <div class="hint" id="typeRenameHint" hidden>Renaming changes the board and future entries. Past entries keep the name they were logged under.</div>
+        </div>
+      </div>
+      <div class="field-row">
+        <label for="atCategory">Category</label>
+        <div>
+          <input type="text" id="atCategory" list="categoryOptions" placeholder="e.g. Separations">
+          <datalist id="categoryOptions"></datalist>
+          <div class="hint">Pick an existing category or type a new one.</div>
+        </div>
+      </div>
+      <div class="field-row">
+        <label for="atTeam">Team</label>
+        <div>
+          <select id="atTeam"><option value="SRU">SRU</option><option value="PSU">PSU</option><option value="Both">Both teams</option></select>
+          <div class="hint">Which team's Dashboard shows this activity. "Both" shows it to everyone.</div>
+        </div>
+      </div>
+      <div class="field-row" id="atEmpProcRow">
+        <label>Employee process</label>
+        <div>
+          <label class="check"><input type="checkbox" id="atEmpProc"> Each case is about one employee (uses the roster)</label>
+          <div class="hint">Staff start a case by employee number. The case has its own fields, and checklist steps can fill them in, so the employee's record updates as the checklist is worked.</div>
+        </div>
+      </div>
+      <div class="field-row" id="atFieldsRow" hidden>
+        <label>Fields</label>
+        <div>
+          <ol class="tpl-steps field-list" id="atFields"></ol>
+          <div class="add-step">
+            <input type="text" id="atNewFieldLabel" placeholder="Add a field, e.g. Date entered in Workday">
+            <select id="atNewFieldType" aria-label="New field type"></select>
+            <button type="button" class="btn btn-ghost btn-sm" id="atAddFieldBtn">Add field</button>
+          </div>
+          <div class="hint">"Column" fields are stored in their own SharePoint column (received/start/end dates, supervisor, outcome). Everything else is stored with the case and appears in the app and in exports.</div>
+        </div>
+      </div>
+      <div class="field-row" id="atInputTypeRow">
+        <label for="atInputType">Staff enter</label>
+        <select id="atInputType">
+          <option value="Employee Number">An employee number</option>
+          <option value="Reference">A reference (letters allowed)</option>
+          <option value="Click Only">Nothing, just click the button</option>
+          <option value="Count">How many they completed (a count, e.g. 115)</option>
+        </select>
+      </div>
+      <div class="field-row" id="atInputLabelRow">
+        <label for="atInputLabel">Box label</label>
+        <input type="text" id="atInputLabel" placeholder="Employee #">
+      </div>
+      <div class="field-row" id="atDupRow">
+        <label for="atDupDays">Duplicate check</label>
+        <div>
+          <input type="number" id="atDupDays" min="0" class="narrow-input"> days
+          <div class="hint">Warns if the same number was logged for this activity within this many days. 0 turns it off. Use a long window for one-time events like exits.</div>
+        </div>
+      </div>
+      <div class="field-row">
+        <label for="atSortOrder">Order</label>
+        <div>
+          <input type="number" id="atSortOrder" class="narrow-input">
+          <div class="hint">Lower numbers appear first. Counting by tens leaves room to insert later.</div>
+        </div>
+      </div>
+      <div class="field-row">
+        <label for="atDescription">Helper text</label>
+        <input type="text" id="atDescription" placeholder="Optional, one short line shown under the name">
+      </div>
+      <div class="field-row" id="atChecklistRow">
+        <label>Checklist</label>
+        <div>
+          <div class="hint" style="margin-top:7px;">Optional. Leave empty for one-step logging. Add steps for work that runs over days or weeks: the board button becomes <strong>Start</strong>, and each item gets its own copy of these steps, which can be edited on that item.</div>
+          <ol class="tpl-steps" id="atSteps"></ol>
+          <div class="add-step">
+            <input type="text" id="atNewStep" placeholder="Add a step, e.g. Submit posting request to Civil Service">
+            <label class="check small"><input type="checkbox" id="atNewStepExt"> Other office</label>
+            <button type="button" class="btn btn-ghost btn-sm" id="atAddStepBtn">Add step</button>
+          </div>
+          <div class="hint" id="atStepsHint" hidden>Changes apply to items started from now on. Items already in progress keep their own checklist.</div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <div class="save-msg" id="typeSaveMsg"></div>
+      <button type="button" class="btn btn-ghost" id="typeCancelBtn">Cancel</button>
+      <button type="button" class="btn btn-navy" id="typeSaveBtn">Save activity</button>
+    </div>
+  </div>
+</div>
+
+<!-- ======= Work item modal ======= -->
+<div class="modal-overlay" id="workOverlay">
+  <div class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="workModalTitle">
+    <div class="modal-header">
+      <div>
+        <h2 id="workModalTitle">Work item</h2>
+        <div class="muted small" id="workModalSub"></div>
+      </div>
+      <button type="button" id="workModalClose" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body" id="workModalBody"></div>
+    <div class="modal-footer" id="workModalFooter"></div>
+  </div>
+</div>
+
+<div id="toastHost" aria-live="polite"></div>
+
 <script>
-function loadMsalFallback() {
-  var s = document.createElement('script');
-  s.src = "https://alcdn.msftauth.net/browser/2.35.0/js/msal-browser.min.js";
-  s.onload = boot;
-  s.onerror = function () { showLoginError("Couldn't load the sign-in library. Check the network connection and reload."); };
-  document.head.appendChild(s);
-}
-</script>
-
-<script>
-/* ============================================================
-   CONFIG
-   ============================================================ */
-const CONFIG = {
-  release:     "v1.1 · 2026-10-30",   // bump on every change; shown in the sidebar
-  clientId:    "0d384d2a-9a9e-46f6-a195-ad63f9e94f06",   // reused "PatrolBidPortal" registration
-  tenantId:    "2935709e-c10c-4809-a302-852d369f8700",
-  // Every address the app is published at. Sign-in uses the one that matches
-  // the page's folder address. Each one must ALSO be added in Azure
-  // (PatrolBidPortal → Authentication → Single-page application), exact
-  // spelling with the trailing slash.
-  redirectUris: [
-    "https://personnelspecialprojects.github.io/dpd-driving-safety/",
-    "https://dpd-driving-safety.dpd-apps.workers.dev/",
-  ],
-  spHost:      "https://dallastxgov.sharepoint.com",
-  siteUrl:     "https://dallastxgov.sharepoint.com/sites/DrivingSafetyProgram",
-  graphScopes: ["User.Read"],
-  spScopes:    ["https://dallastxgov.sharepoint.com/AllSites.Write"],
-};
-
-const LISTS = {
-  roster:    "DrivingSafety_Roster",
-  courses:   "DrivingSafety_Courses",
-  physicals: "DrivingSafety_Physicals",
-  accidents: "DrivingSafety_Accidents",
-  awards:    "DrivingSafety_Awards",
-  audit:     "DrivingSafety_AuditLog",
-  tickets:   "DrivingSafety_Tickets",
-  config:    "DrivingSafety_Config",
-  uploads:   "DrivingSafety_UploadLog",   // upload health log (Audit log → Upload results)
-};
-
-/* ============================================================
-   DS — the app namespace (helpers used by every screen)
-   ============================================================ */
-const DS = {};
-
-/* ---- tiny DOM helper: DS.el('div', {class:'x'}, [childOrString]) ---- */
-DS.el = function (tag, props, children) {
-  const node = document.createElement(tag);
-  if (props) for (const k in props) {
-    if (k === "class") node.className = props[k];
-    else if (k === "html") node.innerHTML = props[k];
-    else if (k === "text") node.textContent = props[k];
-    else if (k.startsWith("on") && typeof props[k] === "function") node.addEventListener(k.slice(2), props[k]);
-    else if (props[k] != null) node.setAttribute(k, props[k]);
-  }
-  if (children != null) {
-    (Array.isArray(children) ? children : [children]).forEach(c => {
-      if (c == null) return;
-      node.appendChild(typeof c === "string" ? document.createTextNode(c) : c);
-    });
-  }
-  return node;
-};
-
-/* ---- toast ---- */
-DS.toast = function (msg, type) {
-  const t = DS.el("div", { class: "toast" + (type ? " toast--" + type : ""), text: msg });
-  document.getElementById("toasts").appendChild(t);
-  setTimeout(() => t.remove(), type === "error" ? 6000 : 3500);
-};
-
-/* ---- loading state into a container ---- */
-DS.showLoading = function (container, label) {
-  container.innerHTML = "";
-  container.appendChild(DS.el("div", { class: "loading" }, [
-    DS.el("div", { class: "spinner" }),
-    DS.el("div", { text: label || "Loading…" }),
-  ]));
-};
-
-/* ---- status badge ---- */
-DS.badge = function (text, kind) {
-  return DS.el("span", { class: "badge badge--" + (kind || "neutral"), text: text });
-};
-
-/* ---- format hint: a small "?" next to an upload title that shows the
-   expected columns on hover/focus. Pure CSS show/hide (:hover, :focus-within)
-   — no listeners to clean up as screens re-render.
-   opts: { source, columns, sample, note } for one table, or
-         { source, sections: [{label, columns, sample}], note } for several. */
-DS.formatHint = function (opts) {
-  const wrap = DS.el("span", { class: "format-hint" });
-  const btn = DS.el("button", {
-    class: "format-hint__btn", type: "button", text: "?",
-    "aria-label": "Expected file format" + (opts.source ? " — " + opts.source : ""),
-  });
-  // Stop clicks from bubbling into a parent dropzone's "click to browse" handler.
-  btn.addEventListener("click", e => { e.preventDefault(); e.stopPropagation(); });
-  wrap.addEventListener("click", e => e.stopPropagation());
-
-  const pop = DS.el("div", { class: "format-hint__pop" });
-  if (opts.source) pop.appendChild(DS.el("div", { class: "format-hint__source", text: opts.source }));
-  const sections = opts.sections || [{ label: null, columns: opts.columns, sample: opts.sample }];
-  sections.forEach(sec => {
-    if (sec.label) pop.appendChild(DS.el("div", { class: "format-hint__seclabel", text: sec.label }));
-    const rows = [DS.el("thead", null, DS.el("tr", null, sec.columns.map(c => DS.el("th", { text: c }))))];
-    if (sec.sample && sec.sample.length) rows.push(DS.el("tbody", null, DS.el("tr", null, sec.sample.map(s => DS.el("td", { text: s })))));
-    const scroll = DS.el("div", { class: "format-hint__scroll" }, DS.el("table", { class: "format-hint__tbl" }, rows));
-    pop.appendChild(scroll);
-  });
-  if (opts.note) pop.appendChild(DS.el("div", { class: "format-hint__note", text: opts.note }));
-
-  wrap.appendChild(btn);
-  wrap.appendChild(pop);
-  return wrap;
-};
-
-/* ---- dates ---- */
-/* Calendar dates are represented as LOCAL NOON so time zones can never push
-   them to the neighboring day (Dallas is 5-6 hours behind UTC). Real
-   timestamps (e.g. audit log times) keep their exact time. */
-function localNoon(y, m, d) { return new Date(y, m, d, 12, 0, 0); }
-DS.parseDate = function (v) {                       // tolerant → Date | null
-  if (v == null || v === "") return null;
-  if (v instanceof Date) {
-    if (isNaN(v)) return null;
-    // Excel dates read by SheetJS land at (or a few seconds/minutes off) local
-    // midnight — snap anything within 90 minutes of midnight to its calendar day.
-    const mins = v.getHours() * 60 + v.getMinutes();
-    if (mins <= 90) return localNoon(v.getFullYear(), v.getMonth(), v.getDate());
-    if (mins >= 22 * 60 + 30) { const n = new Date(v.getTime() + 3 * 3600e3); return localNoon(n.getFullYear(), n.getMonth(), n.getDate()); }
-    return v;
-  }
-  if (typeof v === "number") {                      // Excel serial date
-    const u = new Date(Math.round((Math.floor(v) - 25569) * 86400000));
-    return isNaN(u) ? null : localNoon(u.getUTCFullYear(), u.getUTCMonth(), u.getUTCDate());
-  }
-  const s = String(v).trim();
-  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);                       // 2026-03-12
-  if (m) return localNoon(+m[1], +m[2] - 1, +m[3]);
-  m = s.match(/^(\d{4})-(\d{2})-(\d{2})T00:00:00(\.0+)?Z$/);         // date saved as UTC midnight
-  if (m) return localNoon(+m[1], +m[2] - 1, +m[3]);
-  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4}|\d{2})\b/);                 // 3/12/2026, 3/12/26, "3/12/2026 2:15 PM"
-  if (m) { let y = +m[3]; if (y < 100) y += 2000; return localNoon(y, +m[1] - 1, +m[2]); }
-  const d = new Date(s);
-  return isNaN(d) ? null : d;
-};
-DS.todayIso = function () {                          // today's calendar date, no snapping
-  const d = new Date();
-  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
-};
-DS.fmtDate = function (v) {                          // → "Jun 30, 2028" | "—"
-  const d = DS.parseDate(v);
-  if (!d) return "—";
-  return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
-};
-DS.isoDate = function (v) {                          // → "2028-06-30" | null  (for SP Date fields)
-  const d = DS.parseDate(v);
-  if (!d) return null;
-  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
-};
-
-/* ---- dual-domain email match: local part only ---- */
-DS.emailLocal = function (email) {
-  return String(email || "").trim().toLowerCase().split("@")[0];
-};
-DS.emailsMatch = function (a, b) {
-  const la = DS.emailLocal(a), lb = DS.emailLocal(b);
-  return !!la && la === lb;
-};
-
-/* ============================================================
-   AUTH  (two-token pattern — Graph identity + SharePoint data;
-          scopes are never combined in one request)
-   ============================================================ */
-let msalInstance = null;
-let account = null;
-let booted = false;
-
-/* Pick the redirect URI that matches this page's folder address (ignores
-   index.html and query strings). Returns null if the address isn't listed. */
-function currentBase() {
-  return (location.origin + location.pathname.replace(/[^/]*$/, "")).toLowerCase();
-}
-function redirectUri() {
-  const list = CONFIG.redirectUris || [CONFIG.redirectUri];
-  for (let i = 0; i < list.length; i++) {
-    if (String(list[i]).toLowerCase() === currentBase()) return list[i];
-  }
-  return null;
-}
-const REDIRECT_URI = redirectUri();
-
-const msalConfig = {
-  auth: {
-    clientId: CONFIG.clientId,
-    authority: "https://login.microsoftonline.com/" + CONFIG.tenantId,
-    redirectUri: REDIRECT_URI,
-    navigateToLoginRequestUrl: true,
-  },
-  cache: { cacheLocation: "sessionStorage", storeAuthStateInCookie: false },
-};
-
-function showLoginError(msg) {
-  const box = document.getElementById("loginErr");
-  box.textContent = msg;
-  box.style.display = "block";
-}
-
-async function acquireToken(scopes) {
-  const req = { scopes, account };
-  try {
-    const r = await msalInstance.acquireTokenSilent(req);
-    return r.accessToken;
-  } catch (e) {
-    if (e instanceof msal.InteractionRequiredAuthError) {
-      // Redirect flow: this navigates away and returns; token picked up on reload.
-      await msalInstance.acquireTokenRedirect(req);
-      return null;
-    }
-    throw e;
-  }
-}
-
-/* Cache the SharePoint token in memory for the session (re-fetched silently as needed). */
-DS.spToken = async function () { return acquireToken(CONFIG.spScopes); };
-
-async function loadIdentity() {
-  document.getElementById("userName").textContent = account.name || account.username || "Signed in";
-  document.getElementById("userEmail").textContent = account.username || "";
-  // Optional Graph call for a cleaner display name; failure here is non-fatal.
-  try {
-    const token = await acquireToken(CONFIG.graphScopes);
-    if (!token) return;
-    const res = await fetch("https://graph.microsoft.com/v1.0/me", {
-      headers: { Authorization: "Bearer " + token },
-    });
-    if (res.ok) {
-      const me = await res.json();
-      if (me.displayName) document.getElementById("userName").textContent = me.displayName;
-      if (me.mail || me.userPrincipalName) document.getElementById("userEmail").textContent = me.mail || me.userPrincipalName;
-      DS.me = me;
-    }
-  } catch (_) { /* identity is best-effort */ }
-};
-
-/* ============================================================
-   SHAREPOINT REST LAYER
-   Bearer token from MSAL is sufficient — no X-RequestDigest needed.
-   Writes use the POST + X-HTTP-Method override pattern (most reliable).
-   ============================================================ */
-function listUrl(listName) {
-  return CONFIG.siteUrl + "/_api/web/lists/getbytitle('" + encodeURIComponent(listName) + "')";
-}
-
-async function spFetch(url, options) {
-  const token = await DS.spToken();
-  if (!token) return null; // a redirect was triggered
-  const headers = Object.assign({
-    "Authorization": "Bearer " + token,
-    "Accept": "application/json;odata=nometadata",
-  }, (options && options.headers) || {});
-  let res;
-  try {
-    res = await fetch(url, Object.assign({}, options, { headers }));
-  } catch (networkErr) {
-    // fetch() itself rejected (dropped connection, refused, CORS, etc.) — no HTTP
-    // response at all. Treated as transient: worth a retry with backoff.
-    const err = new Error("Network error reaching SharePoint: " + networkErr.message);
-    err.transient = true;
-    throw err;
-  }
-  if (!res.ok) {
-    let detail = res.status + " " + res.statusText;
-    try { const j = await res.json(); detail = (j.error && (j.error.message || j.error["message"])) || detail; } catch (_) {}
-    const err = new Error("SharePoint: " + detail);
-    err.status = res.status;
-    err.transient = (res.status === 429 || res.status === 503 || res.status === 504);
-    const ra = res.headers.get("Retry-After");
-    if (ra) err.retryAfterMs = Number(ra) * 1000;
-    throw err;
-  }
-  if (res.status === 204) return null;
-  return res.json();
-}
-
-/* GET items. opts: { select:[], filter:"", orderby:"", top:N, expand:"" } */
-DS.spGet = async function (listName, opts) {
-  opts = opts || {};
-  const q = [];
-  if (opts.select) q.push("$select=" + opts.select.map(encodeURIComponent).join(","));
-  if (opts.expand) q.push("$expand=" + encodeURIComponent(opts.expand));
-  if (opts.filter) q.push("$filter=" + encodeURIComponent(opts.filter));
-  if (opts.orderby) q.push("$orderby=" + encodeURIComponent(opts.orderby));
-  // SharePoint returns at most 5,000 items per request; follow the "next page"
-  // link until we have everything (or the requested `top`).
-  const want = opts.top || Infinity;
-  q.push("$top=" + Math.min(opts.top || 5000, 5000));
-  let url = listUrl(listName) + "/items?" + q.join("&");
-  const out = [];
-  while (url && out.length < want) {
-    const data = await spFetch(url);
-    if (!data) break;
-    Array.prototype.push.apply(out, data.value || []);
-    url = data["odata.nextLink"] || data["@odata.nextLink"] || null;
-  }
-  return opts.top ? out.slice(0, opts.top) : out;
-};
-
-DS.spGetById = async function (listName, id, opts) {
-  opts = opts || {};
-  const q = [];
-  if (opts.select) q.push("$select=" + opts.select.map(encodeURIComponent).join(","));
-  if (opts.expand) q.push("$expand=" + encodeURIComponent(opts.expand));
-  const url = listUrl(listName) + "/items(" + id + ")" + (q.length ? "?" + q.join("&") : "");
-  return spFetch(url);
-};
-
-/* Date-only values ("2026-03-12") are sent as noon UTC — the same calendar day
-   everywhere in the Americas — so SharePoint never stores them a day early. */
-function spDates(fields) {
-  const out = {};
-  for (const k in fields) {
-    const v = fields[k];
-    out[k] = (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) ? v + "T12:00:00Z" : v;
-  }
-  return out;
-}
-
-/* ---- Fit values to each column's real type ----
-   The lists were built at different times (some in the Power Apps era), so a
-   column's type isn't always what the code assumes. Before every save, look up
-   the list's columns (cached per list) and convert values to what each needs:
-   Person → the SharePoint user's Id; Number/Date/Yes-No → null when blank;
-   Choice → a clear message if the value isn't one of the allowed choices. */
-const fieldCache = {};
-DS.spFields = function (listName) {
-  if (!fieldCache[listName]) {
-    fieldCache[listName] = spFetch(listUrl(listName) + "/fields?$select=InternalName,Title,TypeAsString,Choices,FillInChoice&$filter=Hidden eq false")
-      .then(d => { const m = {}; ((d && d.value) || []).forEach(f => { m[f.InternalName] = f; }); return m; })
-      .catch(e => { delete fieldCache[listName]; throw e; });
-  }
-  return fieldCache[listName];
-};
-const userIdCache = {};
-function ensureUserId(login) {
-  const key = String(login).trim().toLowerCase();
-  if (!userIdCache[key]) {
-    userIdCache[key] = spFetch(CONFIG.siteUrl + "/_api/web/ensureuser", {
-      method: "POST", headers: { "Content-Type": "application/json;odata=nometadata" },
-      body: JSON.stringify({ logonName: key }),
-    }).then(u => u.Id).catch(e => {
-      delete userIdCache[key];
-      const err = new Error("\u201C" + login + "\u201D isn't a person SharePoint recognizes (" + e.message + ")"); err.status = 400; throw err;
-    });
-  }
-  return userIdCache[key];
-}
-async function fitFields(listName, fields) {
-  let meta;
-  try { meta = await DS.spFields(listName); } catch (_) { return fields; }   // can't read columns → send as-is
-  const out = {};
-  for (const k of Object.keys(fields)) {
-    const v = fields[k], f = meta[k];
-    const blank = v == null || v === "";
-    if (!f) { out[k] = v; continue; }
-    const type = f.TypeAsString;
-    if (type === "User" || type === "UserMulti") {
-      const id = blank ? null : await ensureUserId(v);
-      out[k + "Id"] = type === "UserMulti" ? (id ? [id] : []) : id;
-    } else if (type === "Number" || type === "Currency" || type === "Integer") {
-      if (blank) out[k] = null;
-      else {
-        const n = Number(v);
-        if (isNaN(n)) { const err = new Error("The \u201C" + f.Title + "\u201D column only accepts numbers, but got \u201C" + v + "\u201D."); err.status = 400; throw err; }
-        out[k] = n;
-      }
-    } else if (type === "DateTime" || type === "Boolean") {
-      out[k] = blank ? null : v;
-    } else if (type === "Choice") {
-      const choices = f.Choices || [];
-      if (!blank && choices.length && !f.FillInChoice && !choices.includes(v)) {
-        const err = new Error("The \u201C" + f.Title + "\u201D column only allows: " + choices.join(", ") + ". \u201C" + v +
-          "\u201D isn't one of them \u2014 add it as a choice (or turn on \u201CCan add values manually\u201D) in List settings.");
-        err.status = 400; throw err;
-      }
-      out[k] = blank ? null : v;
-    } else if ((type === "Text" || type === "Note") && v != null && typeof v !== "string") {
-      out[k] = String(v);
-    } else out[k] = v;
-  }
-  return out;
-}
-
-DS.spCreate = async function (listName, fields) {
-  const body = await fitFields(listName, spDates(fields));
-  return spFetch(listUrl(listName) + "/items", {
-    method: "POST",
-    headers: { "Content-Type": "application/json;odata=nometadata" },
-    body: JSON.stringify(body),
-  });
-};
-
-DS.spUpdate = async function (listName, id, fields) {
-  return spFetch(listUrl(listName) + "/items(" + id + ")", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json;odata=nometadata",
-      "X-HTTP-Method": "MERGE",
-      "IF-MATCH": "*",
-    },
-    body: JSON.stringify(await fitFields(listName, spDates(fields))),
-  });
-};
-
-DS.spDelete = async function (listName, id) {
-  return spFetch(listUrl(listName) + "/items(" + id + ")", {
-    method: "POST",
-    headers: { "X-HTTP-Method": "DELETE", "IF-MATCH": "*" },
-  });
-};
-
-/* Field inspector — supports the "verify internal field names before coding"
-   workflow. Run from the browser console, e.g.:  DS.inspectList('DrivingSafety_Roster')
-   Prints internal name → title/type for every non-hidden, non-readonly field,
-   and dumps the first item so you can see real field keys + values. */
-DS.inspectList = async function (listName) {
-  const url = listUrl(listName) +
-    "/fields?$select=InternalName,Title,TypeAsString,Hidden,ReadOnlyField&$filter=Hidden eq false";
-  const data = await spFetch(url);
-  const fields = (data.value || []).filter(f => !f.ReadOnlyField ||
-    ["Id", "Title", "Created", "Modified", "Author", "Editor"].includes(f.InternalName));
-  console.group("Fields — " + listName);
-  console.table(fields.map(f => ({ internal: f.InternalName, title: f.Title, type: f.TypeAsString })));
-  console.groupEnd();
-  const first = await DS.spGet(listName, { top: 1 });
-  console.log("First item (real keys/values):", first[0] || "(list is empty)");
-  return fields;
-};
-
-/* Does a column exist on a list? (Used to skip writing a column the team hasn't added yet.) */
-DS.spFieldExists = async function (listName, field) {
-  try { await spFetch(listUrl(listName) + "/fields/getbyinternalnameortitle('" + encodeURIComponent(field) + "')?$select=InternalName"); return true; }
-  catch (e) { return false; }
-};
-
-/* ---- Background jobs ----
-   Uploads keep saving while the user looks at other screens; only closing or
-   reloading the tab stops them. This shows a progress pill on every screen,
-   warns before the tab is closed, and blocks starting a second upload while
-   one is running (two runs at once could both add the same records). */
-DS.job = {
-  active: null,
-  start(label, total) {
-    this.active = { label: label || "Saving to SharePoint", done: 0, total: total || 0 };
-    document.getElementById("jobPill").style.display = "flex";
-    this.render();
-  },
-  update(done, total, note) {
-    if (!this.active) return;
-    this.active.done = done; this.active.total = total; this.active.note = note || "";
-    this.render();
-  },
-  render() {
-    const a = this.active; if (!a) return;
-    document.getElementById("jobText").textContent = a.label + ": " + a.done.toLocaleString() + " of " + a.total.toLocaleString() +
-      (a.note ? " \u2014 " + a.note : "") + " \u00b7 keep this tab open";
-  },
-  end() { this.active = null; document.getElementById("jobPill").style.display = "none"; },
-  // true (with a message) if something is already running
-  busy() {
-    if (!this.active) return false;
-    DS.toast("An upload is still running (" + this.active.done + " of " + this.active.total + "). Wait for it to finish before starting another.", "error");
-    return true;
-  },
-};
-window.addEventListener("beforeunload", e => {
-  if (DS.job.active) { e.preventDefault(); e.returnValue = "An upload is still saving. Leaving now will stop it partway."; return e.returnValue; }
-});
-
-/* Audit log convenience — every mutating screen calls this. */
-DS.audit = async function (actionType, targetList, targetId, detail) {
-  try {
-    await DS.spCreate(LISTS.audit, {
-      ActionTimestamp: new Date().toISOString(),
-      Actor: (DS.me && (DS.me.mail || DS.me.userPrincipalName)) || (account && account.username) || "unknown",
-      ActionType: actionType,
-      TargetList: targetList || "",
-      TargetId: targetId != null ? String(targetId) : "",
-      Detail: detail || "",
-    });
-  } catch (e) { console.warn("Audit write failed:", e.message); }
-};
-
-/* Expose config/lists for screens + console use. */
-DS.CONFIG = CONFIG;
-DS.LISTS = LISTS;
-
-/* ============================================================
-   ROUTER + SCREEN REGISTRY
-   Hash routing (#/roster) works on GitHub Pages with no server config.
-   Each screen is { title, icon, render(container) }. Stubs for now.
-   ============================================================ */
-function stub(name, note) {
-  return function (container) {
-    container.innerHTML = "";
-    container.appendChild(DS.el("div", { class: "stub" }, [
-      DS.el("h3", { text: name }),
-      DS.el("p", { text: note || "This screen gets built in an upcoming session." }),
-    ]));
+  /* Release 2026.10.30-2. Each file's expected version is listed below; files that didn't
+     change in a release keep their old version, so only changed files need uploading.
+     core.js warns (and turns off saving) if any file doesn't match. */
+  window.PS_PAGE_VERSION = "2026.10.30-2";
+  window.PS_EXPECTED_VERSIONS = {
+    "activity.js": "2026.10.07-1",
+    "admin.js": "2026.10.07-1",
+    "audit.js": "2026.10.07-1",
+    "cases.js": "2026.10.07-1",
+    "config.js": "2026.10.30-2",
+    "core.js": "2026.10.30-1",
+    "legacy.js": "2026.10.07-1",
+    "reports.js": "2026.10.08-1",
+    "roster.js": "2026.10.07-1",
+    "setup-check.js": "2026.10.23-3",
+    "tickets.js": "2026.10.23-3",
+    "work.js": "2026.10.07-1"
   };
-}
-
-const SCREENS = {
-  dashboard: { title: "Dashboard", icon: "◆", render: stub("Dashboard", "Physicals, courses, and awards coming due — built next.") },
-  roster:    { title: "Roster",    icon: "▤", render: stub("Roster", "Search employees and view compliance detail — built next.") },
-  imports:   { title: "Imports",   icon: "▾", render: stub("Imports", "Drag-and-drop Excel import for courses, accidents, roster, and physicals — built next.") },
-  reports:   { title: "Reports",   icon: "▦", render: stub("Reports", "Export any combination of lists to a multi-sheet Excel workbook — built next.") },
-  tickets:   { title: "Tickets",   icon: "▣", render: stub("Tickets", "Manual activity tracking — built next.") },
-  admin:     { title: "Admin",     icon: "◈", render: stub("Admin", "Alert lead times, required courses, and settings — built next.") },
-  audit:     { title: "Audit log", icon: "◷", render: stub("Audit log", "Full, filterable action history — built next.") },
-};
-const NAV_ORDER = ["dashboard", "roster", "imports", "reports", "tickets", "admin", "audit"];
-const DEFAULT_ROUTE = "dashboard";
-
-function buildNav() {
-  const nav = document.getElementById("nav");
-  nav.innerHTML = "";
-  NAV_ORDER.forEach(key => {
-    const s = SCREENS[key];
-    const a = DS.el("a", { href: "#/" + key }, [
-      DS.el("span", { class: "ico", text: s.icon }),
-      DS.el("span", { text: s.title }),
-    ]);
-    a.dataset.route = key;
-    nav.appendChild(a);
-  });
-}
-
-function currentRoute() {
-  const h = (location.hash || "").replace(/^#\/?/, "");
-  const base = h.split("/")[0];              // sub-routes like roster/123456 resolve to "roster"
-  return SCREENS[base] ? base : DEFAULT_ROUTE;
-}
-
-function renderRoute() {
-  const key = currentRoute();
-  const screen = SCREENS[key];
-  document.getElementById("pageTitle").textContent = screen.title;
-  document.querySelectorAll("#nav a").forEach(a => a.classList.toggle("active", a.dataset.route === key));
-  const content = document.getElementById("content");
-  DS.showLoading(content);
-  try {
-    Promise.resolve(screen.render(content)).catch(err => renderError(content, err));
-  } catch (err) { renderError(content, err); }
-}
-
-function renderError(container, err) {
-  container.innerHTML = "";
-  container.appendChild(DS.el("div", { class: "stub" }, [
-    DS.el("h3", { text: "Something went wrong on this screen" }),
-    DS.el("p", { text: (err && err.message) || "Reload and try again. If it keeps happening, note what you clicked." }),
-  ]));
-  console.error(err);
-}
-
-/* Let future screens register themselves cleanly. */
-DS.registerScreen = function (key, screen) { SCREENS[key] = screen; };
-DS.navigate = function (key) { location.hash = "#/" + key; };
-
-/* ============================================================
-   BOOT
-   ============================================================ */
-async function boot() {
-  if (booted) return;
-  if (typeof msal === "undefined") { showLoginError("Sign-in library unavailable. Reload the page."); return; }
-  if (!REDIRECT_URI) {
-    booted = true;
-    document.getElementById("login").style.display = "flex";
-    document.getElementById("signInBtn").disabled = true;
-    showLoginError("This address isn't set up for sign-in yet: " + currentBase() +
-      " — add it to redirectUris in index.html and to the app registration in Azure.");
-    return;
-  }
-  booted = true;
-  msalInstance = new msal.PublicClientApplication(msalConfig);
-
-  try {
-    await msalInstance.initialize();
-    const redirectResult = await msalInstance.handleRedirectPromise();
-    if (redirectResult && redirectResult.account) {
-      account = redirectResult.account;
-    } else {
-      const accts = msalInstance.getAllAccounts();
-      if (accts.length) account = accts[0];
-    }
-  } catch (e) {
-    console.error(e);
-    showLoginError("Sign-in didn't complete: " + (e.message || e));
-    return;
-  }
-
-  if (account) {
-    msalInstance.setActiveAccount(account);
-    startApp();
-  } else {
-    document.getElementById("login").style.display = "flex";
-  }
-}
-
-async function startApp() {
-  document.getElementById("sidebarFoot").textContent = CONFIG.release;
-  document.getElementById("login").style.display = "none";
-  document.getElementById("app").style.display = "block";
-  buildNav();
-  window.addEventListener("hashchange", renderRoute);
-  if (!location.hash) location.hash = "#/" + DEFAULT_ROUTE;
-  loadIdentity();       // async, non-blocking
-  renderRoute();
-}
-
-/* Wire login/logout buttons */
-document.getElementById("signInBtn").addEventListener("click", async () => {
-  try {
-    await msalInstance.loginRedirect({ scopes: CONFIG.graphScopes });
-  } catch (e) { showLoginError("Couldn't start sign-in: " + (e.message || e)); }
-});
-document.getElementById("signOutBtn").addEventListener("click", () => {
-  msalInstance.logoutRedirect({ account, postLogoutRedirectUri: REDIRECT_URI });
-});
-
-/* Boot after all scripts (foundation + screen modules) have loaded and
-   registered, so the nav reflects real screens rather than stubs.
-   The MSAL fallback path calls boot() on its own onload; the guard makes
-   a second call harmless. */
-function kickoff() { if (typeof msal !== "undefined") boot(); }
-if (document.readyState === "complete") kickoff();
-else window.addEventListener("load", kickoff);
+  window.PS_FILE_VERSIONS = {};
 </script>
-
-<!-- Screen modules — each self-registers via DS.registerScreen. Load order
-     doesn't matter as long as they come after the foundation script above. -->
-<script src="data.js"></script>
-<script src="screens-core.js"></script>
-<script src="imports.js"></script>
-<script src="screens-admin.js"></script>
-<script src="migrate-legacy.js"></script>
-<script src="record-export.js"></script>
+<script src="config.js?v=2026.10.30-2"></script>
+<script src="core.js?v=2026.10.30-1"></script>
+<script src="activity.js?v=2026.10.07-1"></script>
+<script src="work.js?v=2026.10.07-1"></script>
+<script src="tickets.js?v=2026.10.23-3"></script>
+<script src="reports.js?v=2026.10.08-1"></script>
+<script src="admin.js?v=2026.10.07-1"></script>
+<script src="audit.js?v=2026.10.07-1"></script>
+<script src="setup-check.js?v=2026.10.23-3"></script>
+<script src="roster.js?v=2026.10.07-1"></script>
+<script src="cases.js?v=2026.10.07-1"></script>
+<script src="legacy.js?v=2026.10.07-1"></script>
+<script>boot();</script>
 </body>
 </html>
